@@ -1,0 +1,7 @@
+torch>=2.1
+transformers>=4.44,<4.50
+datasets>=2.18
+numpy
+matplotlib
+jupyter
+pytest
