@@ -26,7 +26,7 @@ CFG = dict(
     model="GSAI-ML/LLaDA-8B-Instruct",
     gen_len=256, steps=64, windows=8,     # 4 tokens per step; 8 windows of 8 steps
     weight_bits=4,                        # GPTQ weights (128 x 512 masked WikiText-103 calibration windows)
-    levels=(3, 4, 8), b0=4,               # A_down / A_target / A_up activation bits; budget = uniform A_target
+    levels=(3, 4, 5, 6, 7, 8), b0=4,      # activation bits a window may use; budget = uniform A_target (b0)
     clip=0.7,                             # activation clip ratio below 8 bits
     n_calib=16,                           # unlabeled calibration prompts (GSM8K train questions; answers never read)
     kappa_positions="relevant",           # "relevant": score-relevant committed positions R_i (Eq. 3); "all": every committed position
@@ -107,4 +107,5 @@ plt.ylabel("GSM8K accuracy (%)"); plt.xticks(rotation=15); plt.tight_layout(); p
 #   (`calibrate`, `allocate`, `generate`) is task-agnostic.
 # * **Calibration choices** are explicit in `CFG`: `kappa_positions` (score-relevant positions as in Eq. 3, or every committed
 #   position) and `trajectory` (the states replayed for $\kappa$: the uniform $A_\mathrm{target}$ trajectory or the full-precision one).
-# * Change `levels` / `b0` in `CFG` to try other precision sets (e.g. `(4, 8)` with a larger budget passed to `allocate`).
+# * Change `levels` / `b0` in `CFG` to try other precision sets. With a coarse set such as `(3, 4, 8)` and only 8 windows, paying for
+#   one 8-bit window takes four 3-bit windows, and the DP may find no profitable trade (it then returns the uniform schedule).

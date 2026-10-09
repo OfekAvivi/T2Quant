@@ -29,7 +29,7 @@ python -m pytest tests -q          # CPU tests: rotation exactness, GPTQ, quanti
 
 ## Configuration
 All settings are in the `CFG` dictionary of the second cell: generation length / steps / windows, weight bits, the activation
-precision levels (`levels`, default `(3, 4, 8)` = $A_\mathrm{down}$ / $A_\mathrm{target}$ / $A_\mathrm{up}$) and target `b0`, the
+precision levels (`levels`, default `(3, 4, 5, 6, 7, 8)`, the per-window choices) and target `b0` (default 4), the
 number of calibration prompts (default 16) and of evaluation problems (default 200), and two calibration choices:
 `kappa_positions` (`"relevant"`: score-relevant committed positions, Eq. 3 of the paper; `"all"`: every committed position) and
 `trajectory` (states replayed for $\kappa$: the uniform $A_\mathrm{target}$ trajectory, `"target"`, or the full-precision one, `"fp"`).
