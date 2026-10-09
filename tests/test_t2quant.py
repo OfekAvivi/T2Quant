@@ -32,7 +32,7 @@ class _Block(nn.Module):
         att = torch.softmax(q @ k.transpose(-1, -2) / hd ** 0.5, -1) @ v
         x = x + self.attn_out(att.transpose(1, 2).reshape(B, L, D))
         m = self.ff_norm(x)
-        return x + self.ff_out(torch.nn.functional.silu(self.ff_proj(m)) * self.up_proj(m))
+        return x + self.ff_out(torch.nn.functional.silu(self.ff_proj(m)) * self.up_proj(m)), None   # (hidden, cache) like LLaDA
 
 
 class TinyLLaDA(nn.Module):
@@ -48,7 +48,7 @@ class TinyLLaDA(nn.Module):
     def forward(self, ids):
         x = self.transformer.wte(ids)
         for b in self.transformer.blocks:
-            x = b(x)
+            x = b(x)[0]
         return SimpleNamespace(logits=self.transformer.ff_out(self.transformer.ln_f(x)))
 
 
@@ -82,8 +82,40 @@ def test_sampler_commits_everything():
 def test_calibrate_and_allocate_end_to_end():
     from t2quant import calibrate
     m = TinyLLaDA(); q = ActQuant(m); prompts = [torch.randint(0, 1000, (1, 5)) for _ in range(2)]
-    cal = calibrate(m, q, prompts, levels=(3, 4, 8), b0=4, gen_len=32, steps=8, windows=4, batch=4, log=lambda *_: None)
+    cal = calibrate(m, q, TinyLLaDA(), prompts, levels=(3, 4, 8), b0=4, gen_len=32, steps=8, windows=4, batch=4, log=lambda *_: None)
     assert cal["iota"][-1] == 0 and (cal["iota"][:-1] >= 0).all()          # nothing is masked after the last window
     assert all((cal["kappa"][b] >= 0).all() for b in (3, 4, 8)) and (cal["gain"][4] == 0).all()
     sched = allocate(cal["gain"], (3, 4, 8), 4)
     assert len(sched) == 4 and sum(sched) == 16
+
+
+def test_gptq_quantizes_to_4_bit_grid_and_keeps_function_close():
+    from t2quant import apply_gptq
+    m = TinyLLaDA().float(); ids = torch.randint(0, 1000, (16, 12)); ref = m(ids[:2]).logits.clone()
+    apply_rotation(m, seed=0); apply_gptq(m, ids, bits=4, batch=8, log=lambda *_: None)
+    for b in m.transformer.blocks:
+        for n in ("q_proj", "k_proj", "v_proj", "attn_out", "ff_proj", "up_proj", "ff_out"):
+            assert all(len(torch.unique(r)) <= 16 for r in getattr(b, n).weight.data)
+    out = m(ids[:2]).logits
+    assert torch.nn.functional.cosine_similarity(out.flatten(), ref.flatten(), dim=0) > 0.9
+
+
+class _CharTok:
+    """Tokenizer stub: token i is the character chr(i) (special ids >= 126000 decode to nothing)."""
+    def decode(self, ids, skip_special_tokens=True):
+        return "".join(chr(i) for i in ids if i < 126000)
+
+
+def test_relevant_positions_stop_at_question():
+    from t2quant.data import relevant_positions
+    text = "The answer is 3 Question: x"; ids = [ord(c) for c in text] + [126081] * 3
+    R = relevant_positions(ids, _CharTok())
+    assert R == set(range(text.index("Question:")))
+
+
+def test_calibrate_with_relevance_and_fp_trajectory():
+    from t2quant import calibrate
+    m = TinyLLaDA(); q = ActQuant(m); prompts = [torch.randint(0, 1000, (1, 5)) for _ in range(2)]
+    for kw in (dict(relevant=lambda final: set(range(8))), dict(trajectory="fp")):
+        cal = calibrate(m, q, TinyLLaDA(), prompts, levels=(3, 4, 8), b0=4, gen_len=32, steps=8, windows=4, batch=4, log=lambda *_: None, **kw)
+        assert all((cal["kappa"][b] >= 0).all() for b in (3, 4, 8)) and (cal["gain"][4] == 0).all()

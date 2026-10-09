@@ -2,7 +2,8 @@
 
 At each of T steps the model predicts every masked position; the `G / T` most confident predictions are committed. Positions whose
 prediction is end-of-sequence / end-of-turn get confidence 0, so they are committed last (LLaDA's evaluation rule for reasoning
-tasks). `schedule` maps a window index (K windows of T / K steps) to an activation bit-width (None = full precision).
+tasks). `schedule` maps a window index (K windows of T / K steps) to an activation bit-width (None = no activation quantization);
+`quant` may be None for a model without activation quantization (e.g. the full-precision reference).
 """
 from __future__ import annotations
 
@@ -20,7 +21,8 @@ def generate(model, quant, prompt_ids: torch.Tensor, gen_len: int = 256, steps: 
     x = torch.cat([prompt_ids.to(dev), torch.full((1, gen_len), MASK_ID, device=dev)], 1)
     per_step = gen_len // steps; states, commits = [], []
     for t in range(steps):
-        quant.bits = None if schedule is None else schedule[t * windows // steps]
+        if quant is not None:
+            quant.bits = None if schedule is None else schedule[t * windows // steps]
         mask = x[0, P:] == MASK_ID
         if record:
             states.append(x[0, P:].clone())
@@ -34,6 +36,7 @@ def generate(model, quant, prompt_ids: torch.Tensor, gen_len: int = 256, steps: 
         x[0, P + idx] = x0[idx]
         if record:
             commits.append(idx.cpu())
-    quant.bits = None
+    if quant is not None:
+        quant.bits = None
     trace = {"states": torch.stack(states).cpu(), "commits": commits, "final": x[0, P:].cpu()} if record else None
     return x[0, P:].cpu(), trace

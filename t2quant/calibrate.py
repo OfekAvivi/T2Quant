@@ -1,5 +1,6 @@
 """Label-free calibration: per-window local divergence kappa_k(b) and downstream influence iota_k, from a few unlabeled prompts.
 
+  p_fp is the full-precision reference model (`fp_model`); p_b the quantized model with b-bit activations.
   kappa_k(b) = mean over prompts of sum_{t in window k} sum_{j committed at t} KL(p_fp(.|x_t)_j || p_b(.|x_t)_j)
                (every state x_t of the uniform A_target trajectory replayed at bit-width b; the state is held fixed)
   iota_k     = mean over prompts of sum_{j still masked after window k} KL(p_fp(.|x_after)_j || p_fp(.|x_before)_j)
@@ -14,8 +15,8 @@ import torch.nn.functional as F
 from .sampler import MASK_ID, generate
 
 
-def _kl(lp, lq):   # KL(p || q) per row from log-probabilities
-    return (lp.exp() * (lp - lq)).sum(-1)
+def _kl(lp, lq):   # KL(p || q) per row from log-probabilities (clamped at 0: float rounding can give -1e-6 when p == q)
+    return (lp.exp() * (lp - lq)).sum(-1).clamp_min(0)
 
 
 @torch.no_grad()
@@ -26,27 +27,36 @@ def _gen_logits(model, prompt, states):
 
 
 @torch.no_grad()
-def calibrate(model, quant, prompts, levels=(3, 4, 8), b0=4, gen_len=256, steps=64, windows=8, batch=8, log=print):
-    """prompts: list of [1, P] id tensors. Returns dict(kappa {b: [K]}, iota [K], gain {b: [K]}, traces)."""
+def calibrate(model, quant, fp_model, prompts, levels=(3, 4, 8), b0=4, gen_len=256, steps=64, windows=8, batch=8, relevant=None,
+              trajectory="target", log=print):
+    """prompts: list of [1, P] id tensors. relevant: optional callable(final ids) -> set of score-relevant positions R_i; kappa then sums
+    only over committed positions in R_i (None = every committed position). trajectory: "target" replays the uniform b0 trajectory,
+    "fp" the full-precision one. Returns dict(kappa {b: [K]}, iota [K], gain {b: [K]}, traces)."""
     spw = steps // windows; kappa = {b: torch.zeros(windows) for b in levels}; iota = torch.zeros(windows); traces = []
     for n, prompt in enumerate(prompts):
-        _, tr = generate(model, quant, prompt, gen_len, steps, [b0] * windows, windows, record=True)   # uniform A_target trajectory
+        sched = None if trajectory == "fp" else [b0] * windows
+        _, tr = (generate(fp_model, None, prompt, gen_len, steps, None, windows, record=True) if trajectory == "fp"
+                 else generate(model, quant, prompt, gen_len, steps, sched, windows, record=True))                 # reference trajectory
         traces.append(tr); S = tr["states"]
+        if relevant is not None:                                                                        # keep only score-relevant commits
+            R = torch.tensor(sorted(relevant(tr["final"])), dtype=torch.long)
+            tr["commits"] = [c[torch.isin(c, R)] for c in tr["commits"]]
         for i in range(0, steps, batch):                                                                # kappa: replay each state
             ts = range(i, min(i + batch, steps)); rows = [(r, t, tr["commits"][t]) for r, t in enumerate(ts)]
-            quant.bits = None; lg = _gen_logits(model, prompt, S[i:i + len(ts)])
+            lg = _gen_logits(fp_model, prompt, S[i:i + len(ts)])
             fp = {t: F.log_softmax(lg[r, idx.to(lg.device)].float(), -1) for r, t, idx in rows}; del lg
             for b in levels:
                 quant.bits = b; lg = _gen_logits(model, prompt, S[i:i + len(ts)]); quant.bits = None
                 for r, t, idx in rows:
-                    kappa[b][t // spw] += _kl(fp[t], F.log_softmax(lg[r, idx.to(lg.device)].float(), -1)).sum().cpu() / len(prompts)
+                    if len(idx):
+                        kappa[b][t // spw] += _kl(fp[t], F.log_softmax(lg[r, idx.to(lg.device)].float(), -1)).sum().cpu() / len(prompts)
                 del lg
         ends = torch.cat([S[::spw][1:], tr["final"][None]])                                             # x_after of every window
         for k in range(windows):                                                                        # iota: fp beliefs before / after
             still = (ends[k] == MASK_ID)
             if not still.any():
                 continue
-            lg = _gen_logits(model, prompt, torch.stack([S[k * spw], ends[k]])); lg = lg[:, still.to(lg.device)]
+            lg = _gen_logits(fp_model, prompt, torch.stack([S[k * spw], ends[k]])); lg = lg[:, still.to(lg.device)]
             iota[k] += _kl(F.log_softmax(lg[1].float(), -1), F.log_softmax(lg[0].float(), -1)).sum().cpu() / len(prompts)
             del lg
         log(f"calibration prompt {n + 1}/{len(prompts)} done")

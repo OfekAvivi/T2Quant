@@ -38,3 +38,13 @@ def correct(text: str, gold: str) -> bool:
         return abs(float(pred) - float(gold)) < 1e-6
     except ValueError:
         return pred == gold
+
+
+def relevant_positions(final_ids, tok) -> set:
+    """Score-relevant positions R_i of a generated answer (label-free, from the model's own output): the positions whose text lies
+    before the first "Question:", i.e. everything the GSM8K scorer reads."""
+    ids = [int(i) for i in final_ids]; spans, prev = [], 0
+    for k in range(len(ids)):
+        cur = len(tok.decode(ids[:k + 1], skip_special_tokens=True)); spans.append((prev, cur)); prev = cur
+    text = tok.decode(ids, skip_special_tokens=True); end = text.find("Question:") if "Question:" in text else len(text)
+    return {k for k, (a, b) in enumerate(spans) if b > a and b <= end}

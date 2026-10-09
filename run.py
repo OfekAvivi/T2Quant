@@ -4,52 +4,63 @@ import matplotlib; matplotlib.use('Agg')
 # # T²Quant
 # 
 # Masked-diffusion LMs (here **LLaDA-8B-Instruct**) generate by iteratively unmasking tokens over many denoising steps. Under 4-bit
-# activation quantization, *when* during denoising precision matters depends on the task. T²Quant finds this out **without
-# labels** and reallocates activation precision over the denoising trajectory at a **fixed average bit budget**:
+# quantization, *when* during denoising precision matters depends on the task. T²Quant finds this out **without labels** and reallocates
+# activation precision over the denoising trajectory at a **fixed average bit budget**:
 # 
 # 1. **Calibration** (a few unlabeled prompts): for each denoising window, the local divergence $\kappa_k(b)$ between full-precision
-#    and $b$-bit predictions at the positions the window commits, and the window's downstream influence $\iota_k$ on positions not yet generated.
+#    and $b$-bit predictions at the score-relevant positions the window commits, and the window's downstream influence $\iota_k$ on
+#    positions not yet generated.
 # 2. **Predicted gain** of moving window $k$ from the target precision $b_0$ to $b$: $g_k(b) = \iota_k\,[\kappa_k(b_0) - \kappa_k(b)]$.
 # 3. **Allocation**: an exact dynamic program picks one precision per window, maximizing $\sum_k g_k(b_k)$ at the budget of uniform $b_0$.
 # 4. **Deployment**: each denoising step looks up its window's precision.
 # 
-# This notebook runs the full pipeline on GSM8K on one GPU (≥ 24 GB, roughly 25–30 minutes). Its settings differ from the paper's in a
-# few places, listed in the last cell.
+# The notebook runs the full pipeline on GSM8K: W4 (GPTQ) weights with 4-bit activations as the quantized base, 16 calibration prompts and
+# 200 test problems. It needs one GPU with at least 40 GB (a full-precision reference and the quantized model are both loaded) and takes
+# roughly 1.5 hours. Settings that differ from the paper are listed in the last cell.
 import torch, numpy as np, matplotlib.pyplot as plt
 from transformers import AutoModel, AutoTokenizer
-from t2quant import ActQuant, allocate, apply_rotation, calibrate, generate
+from t2quant import ActQuant, allocate, apply_gptq, apply_rotation, calibrate, calibration_windows, generate
 from t2quant import data
 
 CFG = dict(
     model="GSAI-ML/LLaDA-8B-Instruct",
     gen_len=256, steps=64, windows=8,     # 4 tokens per step; 8 windows of 8 steps
+    weight_bits=4,                        # GPTQ weights (128 x 512 masked WikiText-103 calibration windows)
     levels=(3, 4, 8), b0=4,               # A_down / A_target / A_up activation bits; budget = uniform A_target
     clip=0.7,                             # activation clip ratio below 8 bits
-    n_calib=8,                            # unlabeled calibration prompts (GSM8K train questions; answers never read)
-    n_eval=50,                            # GSM8K test problems for the evaluation
+    n_calib=16,                           # unlabeled calibration prompts (GSM8K train questions; answers never read)
+    kappa_positions="relevant",           # "relevant": score-relevant committed positions R_i (Eq. 3); "all": every committed position
+    trajectory="target",                  # states replayed for kappa: the uniform A_target trajectory ("target") or full precision ("fp")
+    n_eval=200,                           # GSM8K test problems for the evaluation
 )
 torch.manual_seed(0)
 
-# ## 0. Model: full precision and quantized in one object
-# A QuaRot-style rotation (exact in full precision) makes per-token 4-bit activations usable. The activation quantizer is a set of hooks
-# whose bit-width can be changed between forward passes (`quant.bits = None` gives the full-precision model). Weights stay in bf16.
+# ## 0. Models: full-precision reference and quantized base
+# The reference is the unmodified bf16 model. The quantized base applies a QuaRot-style rotation (exact in full precision, it makes
+# 4-bit activations usable), GPTQ 4-bit weights, and per-token activation quantization whose bit-width can be changed between
+# denoising steps (`quant.bits`). GPTQ takes roughly 10-15 minutes.
 tok = AutoTokenizer.from_pretrained(CFG["model"], trust_remote_code=True)
-model = AutoModel.from_pretrained(CFG["model"], trust_remote_code=True, torch_dtype=torch.bfloat16).cuda().eval()
-apply_rotation(model, seed=0)
+load = lambda: AutoModel.from_pretrained(CFG["model"], trust_remote_code=True, torch_dtype=torch.bfloat16).cuda().eval()
+fp_model = load()                                       # full-precision reference
+model = load(); apply_rotation(model, seed=0)
+apply_gptq(model, calibration_windows(tok), bits=CFG["weight_bits"])
 quant = ActQuant(model, clip=CFG["clip"])
 
 q = data.load("test", 1)[0]; ids = data.prompt_ids(tok, q["question"])
-for name, sched in (("full precision", None), ("uniform A4", [CFG["b0"]] * CFG["windows"])):
-    out, _ = generate(model, quant, ids, CFG["gen_len"], CFG["steps"], sched, CFG["windows"])
+for name, m, qz, sched in (("full precision", fp_model, None, None), (f"uniform W{CFG['weight_bits']}A{CFG['b0']}", model, quant, [CFG["b0"]] * CFG["windows"])):
+    out, _ = generate(m, qz, ids, CFG["gen_len"], CFG["steps"], sched, CFG["windows"])
     print(f"--- {name}:", tok.decode(out, skip_special_tokens=True)[:400])
 
 # ## 1. Label-free calibration
-# Run the uniform-$A_\mathrm{target}$ model on a few unlabeled prompts, record every intermediate state, and replay each state at every
-# precision $b$ (the state is held fixed, so only the precision differs). $\kappa_k(b)$ sums KL(full precision ‖ $b$-bit) over the
-# positions committed in window $k$; $\iota_k$ measures how much window $k$'s commitments change the full-precision model's beliefs
-# about the positions still masked afterwards. No answers, labels or task metrics are used.
+# Run the quantized model at uniform $A_\mathrm{target}$ on a few unlabeled prompts, record every intermediate state, and replay each
+# state at every activation precision $b$ (the state is held fixed, so only the precision differs). $\kappa_k(b)$ sums
+# KL(full precision ‖ $b$-bit) over the score-relevant positions committed in window $k$ (for GSM8K, the answer text before any
+# "Question:"; read from the model's own output, no answers needed); $\iota_k$ measures how much window $k$'s commitments change the
+# full-precision model's beliefs about the positions still masked afterwards.
 calib = [data.prompt_ids(tok, r["question"]) for r in data.load("train", CFG["n_calib"])]
-cal = calibrate(model, quant, calib, CFG["levels"], CFG["b0"], CFG["gen_len"], CFG["steps"], CFG["windows"])
+rel = (lambda final: data.relevant_positions(final, tok)) if CFG["kappa_positions"] == "relevant" else None
+cal = calibrate(model, quant, fp_model, calib, CFG["levels"], CFG["b0"], CFG["gen_len"], CFG["steps"], CFG["windows"],
+                relevant=rel, trajectory=CFG["trajectory"])
 
 K = CFG["windows"]; x = np.arange(1, K + 1)
 fig, ax = plt.subplots(1, 3, figsize=(12, 3))
@@ -70,28 +81,30 @@ schedule = allocate(cal["gain"], CFG["levels"], CFG["b0"])
 print("T²Quant schedule (bits per window):", schedule, "| average bits:", np.mean(schedule))
 
 # ## 3. Evaluation on held-out problems
-# Full precision, uniform $A_\mathrm{target}$ and the T²Quant schedule (same average bits) on the first `n_eval` GSM8K test
-# problems. With 50 problems the accuracy differences are noisy (one problem = 2 points); the paired win / loss counts are more informative.
+# Full precision, uniform $A_\mathrm{target}$ and the T²Quant schedule (same average bits) on the first `n_eval` GSM8K test problems.
+# With 200 problems one problem is 0.5 points; the paired fixed / broken counts against uniform are the most informative comparison.
 evalset = data.load("test", CFG["n_eval"])
-def evaluate(sched):
+def evaluate(m, qz, sched):
     ok = []
     for r in evalset:
-        out, _ = generate(model, quant, data.prompt_ids(tok, r["question"]), CFG["gen_len"], CFG["steps"], sched, CFG["windows"])
+        out, _ = generate(m, qz, data.prompt_ids(tok, r["question"]), CFG["gen_len"], CFG["steps"], sched, CFG["windows"])
         ok.append(data.correct(tok.decode(out, skip_special_tokens=True), r["gold"]))
     return np.array(ok)
 
-res = {"full precision": evaluate(None), f"uniform A{CFG['b0']}": evaluate([CFG["b0"]] * K), "T²Quant": evaluate(schedule)}
+uni = f"uniform W{CFG['weight_bits']}A{CFG['b0']}"
+res = {"full precision": evaluate(fp_model, None, None), uni: evaluate(model, quant, [CFG["b0"]] * K), "T²Quant": evaluate(model, quant, schedule)}
 for name, ok in res.items():
-    print(f"{name:16s} {100 * ok.mean():5.1f}%")
-u, s = res[f"uniform A{CFG['b0']}"], res["T²Quant"]
+    print(f"{name:18s} {100 * ok.mean():5.1f}%")
+u, s = res[uni], res["T²Quant"]
 print(f"T²Quant vs uniform: fixed {int((s & ~u).sum())} problems, broke {int((u & ~s).sum())}")
 plt.figure(figsize=(4, 3)); plt.bar(list(res), [100 * v.mean() for v in res.values()], color=["k", "grey", "tab:blue"])
 plt.ylabel("GSM8K accuracy (%)"); plt.xticks(rotation=15); plt.tight_layout(); plt.savefig(f'fig{plt.gcf().number}.png')
 
 # ## Differences from the paper's setup
-# * **Weights** stay in bf16 (activation-only quantization); the paper's base also quantizes weights to 4 bits with GPTQ.
-# * **Scale**: 256 tokens / 64 steps / 8 windows, 8 calibration prompts and 50 test problems, versus 512 tokens / 128 steps / 16 windows
-#   and hundreds of problems in the paper; one task, one rotation seed.
-# * **Task**: GSM8K only; other tasks need their prompt format and scorer in `t2quant/data.py`. Everything else (`calibrate`, `allocate`,
-#   `generate`) is task-agnostic.
+# * **Scale**: 256 tokens / 64 steps / 8 windows, 16 calibration prompts and 200 test problems, versus 512 tokens / 128 steps / 16 windows
+#   and the full evaluation sets in the paper; one task, one rotation seed.
+# * **Task**: GSM8K only; other tasks need their prompt format, scorer and score-relevant span in `t2quant/data.py`. Everything else
+#   (`calibrate`, `allocate`, `generate`) is task-agnostic.
+# * **Calibration choices** are explicit in `CFG`: `kappa_positions` (score-relevant positions as in Eq. 3, or every committed
+#   position) and `trajectory` (the states replayed for $\kappa$: the uniform $A_\mathrm{target}$ trajectory or the full-precision one).
 # * Change `levels` / `b0` in `CFG` to try other precision sets (e.g. `(4, 8)` with a larger budget passed to `allocate`).
