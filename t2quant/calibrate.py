@@ -27,16 +27,16 @@ def _gen_logits(model, prompt, states):
 
 
 @torch.no_grad()
-def calibrate(model, quant, fp_model, prompts, levels=(3, 4, 8), b0=4, gen_len=256, steps=64, windows=8, batch=8, relevant=None,
-              trajectory="target", log=print):
+def calibrate(model, quant, fp_model, prompts, levels=(3, 4, 5, 6, 7, 8), b0=4, gen_len=256, steps=64, windows=8, batch=8, relevant=None,
+              trajectory="target", eos="last", log=print):
     """prompts: list of [1, P] id tensors. relevant: optional callable(final ids) -> set of score-relevant positions R_i; kappa then sums
     only over committed positions in R_i (None = every committed position). trajectory: "target" replays the uniform b0 trajectory,
     "fp" the full-precision one. Returns dict(kappa {b: [K]}, iota [K], gain {b: [K]}, traces)."""
     spw = steps // windows; kappa = {b: torch.zeros(windows) for b in levels}; iota = torch.zeros(windows); traces = []
     for n, prompt in enumerate(prompts):
         sched = None if trajectory == "fp" else [b0] * windows
-        _, tr = (generate(fp_model, None, prompt, gen_len, steps, None, windows, record=True) if trajectory == "fp"
-                 else generate(model, quant, prompt, gen_len, steps, sched, windows, record=True))                 # reference trajectory
+        _, tr = (generate(fp_model, None, prompt, gen_len, steps, None, windows, record=True, eos=eos) if trajectory == "fp"
+                 else generate(model, quant, prompt, gen_len, steps, sched, windows, record=True, eos=eos))       # reference trajectory
         traces.append(tr); S = tr["states"]
         if relevant is not None:                                                                        # keep only score-relevant commits
             R = torch.tensor(sorted(relevant(tr["final"])), dtype=torch.long)
