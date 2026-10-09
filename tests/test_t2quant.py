@@ -119,3 +119,31 @@ def test_calibrate_with_relevance_and_fp_trajectory():
     for kw in (dict(relevant=lambda final: set(range(8))), dict(trajectory="fp")):
         cal = calibrate(m, q, TinyLLaDA(), prompts, levels=(3, 4, 8), b0=4, gen_len=32, steps=8, windows=4, batch=4, log=lambda *_: None, **kw)
         assert all((cal["kappa"][b] >= 0).all() for b in (3, 4, 8)) and (cal["gain"][4] == 0).all()
+
+
+def test_transfer_counts_match_llada():
+    from t2quant.sampler import transfer_counts
+    assert transfer_counts(256, 64) == [4] * 64
+    c = transfer_counts(10, 4); assert c == [3, 3, 2, 2] and sum(c) == 10
+
+
+def test_humaneval_scoring_and_relevance():
+    from t2quant import data
+    row = {"question": "def add(a, b):\n    \"\"\"add\"\"\"\n", "test": "def check(f):\n    assert f(1, 2) == 3\n", "entry_point": "add"}
+    assert data.humaneval_correct("Sure:\n```python\ndef add(a, b):\n    return a + b\n```", row)
+    assert data.humaneval_correct("    return a + b", row) and not data.humaneval_correct("    return a - b", row)
+    text = "x ```python\ndef f():\n    pass\n``` done"; ids = [ord(c) for c in text]
+    R = data.humaneval_relevant_positions(ids, _CharTok()); s = text.index("def"); e = text.index("```", s)
+    assert R == set(range(s, e))
+
+
+def test_report_statistics(tmp_path):
+    import json
+    from t2quant.cli import cmd_report
+    from types import SimpleNamespace
+    ok = {"fp": [1, 1, 1, 0], "uniform": [1, 0, 0, 0], "t2quant": [1, 1, 0, 1]}
+    for c, v in ok.items():
+        (tmp_path / f"preds_{c}.shard0of1.jsonl").write_text("".join(json.dumps({"idx": i, "ok": bool(x)}) + "\n" for i, x in enumerate(v)))
+    cmd_report(SimpleNamespace(out=str(tmp_path)))
+    rep = (tmp_path / "report.txt").read_text()
+    assert "4 problems" in rep and "fixed 2, broke 0" in rep and "75.0%" in rep
