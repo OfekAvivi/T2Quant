@@ -40,16 +40,6 @@ def correct(text: str, gold: str) -> bool:
         return pred == gold
 
 
-def relevant_positions(final_ids, tok) -> set:
-    """Score-relevant positions R_i of a generated answer (label-free, from the model's own output): the positions whose text lies
-    before the first "Question:", i.e. everything the GSM8K scorer reads."""
-    ids = [int(i) for i in final_ids]; spans, prev = [], 0
-    for k in range(len(ids)):
-        cur = len(tok.decode(ids[:k + 1], skip_special_tokens=True)); spans.append((prev, cur)); prev = cur
-    text = tok.decode(ids, skip_special_tokens=True); end = text.find("Question:") if "Question:" in text else len(text)
-    return {k for k, (a, b) in enumerate(spans) if b > a and b <= end}
-
-
 # ---- HumanEval (code; zero-shot, LLaDA's prompt; end-of-sequence banned as in LLaDA's code evaluation) ----------------------------
 def humaneval_load(n: int | None = None):
     from datasets import load_dataset
@@ -84,33 +74,22 @@ def humaneval_correct(text: str, row: dict, timeout: float = 10.0) -> bool:
         os.unlink(path)
 
 
-def humaneval_relevant_positions(final_ids, tok) -> set:
-    """Score-relevant positions: the code inside the ```python fence the scorer executes (the whole answer if there is no fence)."""
-    import re as _re
-    ids = [int(i) for i in final_ids]; spans, prev = [], 0
-    for k in range(len(ids)):
-        cur = len(tok.decode(ids[:k + 1], skip_special_tokens=True)); spans.append((prev, cur)); prev = cur
-    text = tok.decode(ids, skip_special_tokens=True); m = _re.search(r"```(?:python)?\n(.*?)```", text, _re.S)
-    s, e = (m.start(1), m.end(1)) if m else (0, len(text))
-    return {k for k, (a, b) in enumerate(spans) if b > a and a >= s and b <= e}
-
-
 # ---- task registry: calibration prompts never overlap the evaluation problems ---------------------------------------------------
 N_CALIB = {"gsm8k": 16, "humaneval": 50}       # default number of calibration prompts per task
 
 
 def task(name: str, tok, n_calib: int | None, n_eval: int | None):
-    """-> dict(calib=[prompt ids], eval=[(prompt ids, scorer(text) -> bool)], relevant=callable, eos=str)."""
+    """-> dict(calib=[prompt ids], eval=[(prompt ids, scorer(text) -> bool)], eos=str)."""
     n_calib = N_CALIB[name] if n_calib is None else n_calib
     if name == "gsm8k":
         cal = [prompt_ids(tok, r["question"]) for r in load("train", n_calib)]
         ev = [(prompt_ids(tok, r["question"]), (lambda text, g=r["gold"]: correct(text, g))) for r in load("test", n_eval or 1319)]
-        return dict(calib=cal, eval=ev, relevant=lambda f: relevant_positions(f, tok), eos="last")
+        return dict(calib=cal, eval=ev, eos="last")
     if name == "humaneval":     # no training split: a fixed shuffle (seed 0) of the 164 problems; the first n_calib calibrate, the next evaluate
         import random
         rows = humaneval_load(); order = list(range(len(rows))); random.Random(0).shuffle(order)
         cal_rows = [rows[i] for i in order[:n_calib]]; ev_rows = [rows[i] for i in order[n_calib:]][:n_eval]
         return dict(calib=[humaneval_prompt_ids(tok, r["question"]) for r in cal_rows],
                     eval=[(humaneval_prompt_ids(tok, r["question"]), (lambda text, r=r: humaneval_correct(text, r))) for r in ev_rows],
-                    relevant=lambda f: humaneval_relevant_positions(f, tok), eos="ban")
+                    eos="ban")
     raise ValueError(f"unknown task {name!r} (gsm8k, humaneval)")

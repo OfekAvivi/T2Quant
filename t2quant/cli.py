@@ -44,7 +44,7 @@ def cmd_calibrate(a):
     fp = load_fp(a.model); model, quant = load_quantized(a.model, tok, a.weight_bits, a.clip, a.seed, a.cache_dir)
     prompts = T["calib"][i::n]
     cal = calibrate(model, quant, fp, prompts, levels, a.b0, a.gen_len, a.steps, a.windows,
-                    relevant=T["relevant"] if a.kappa_positions == "relevant" else None, trajectory=a.trajectory, eos=T["eos"])
+                    trajectory=a.trajectory, eos=T["eos"])
     part = out / f"calibration.shard{i}of{n}.pt"; tmp = part.with_suffix(".tmp")      # sums over this shard's prompts
     torch.save({"kappa": {b: v * len(prompts) for b, v in cal["kappa"].items()}, "iota": cal["iota"] * len(prompts), "n": len(prompts)}, tmp)
     tmp.replace(part)
@@ -122,7 +122,7 @@ def cmd_report(a):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter); sub = ap.add_subparsers(required=True)
     c = sub.add_parser("calibrate"); _common(c); c.add_argument("--levels", default="3,4,5,6,7,8")
-    c.add_argument("--kappa_positions", default="relevant", choices=("relevant", "all")); c.add_argument("--trajectory", default="fp", choices=("fp", "target"))
+    c.add_argument("--trajectory", default="fp", choices=("fp", "target"))
     c.add_argument("--shard", default="0/1", help="i/n: calibrate on prompts i, i+n, ... (merged when all n shards exist)")
     c.set_defaults(func=cmd_calibrate)
     e = sub.add_parser("evaluate"); _common(e); e.add_argument("--config", required=True, choices=("fp", "uniform", "t2quant"))

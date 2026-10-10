@@ -8,7 +8,7 @@ Label-free, task-specific allocation of activation precision over the denoising 
 | step | what happens | code |
 |---|---|---|
 | 0 | load LLaDA-8B-Instruct twice: a full-precision reference, and the quantized base (QuaRot-style rotation, GPTQ 4-bit weights, switchable per-token activation quantization) | `t2quant/rotation.py`, `t2quant/gptq.py`, `t2quant/actquant.py` |
-| 1 | **calibration** on a few *unlabeled* prompts: on the full-precision trajectory, per-window local divergence $\kappa_k(b)$ at score-relevant committed positions and downstream influence $\iota_k$ | `t2quant/calibrate.py`, `t2quant/data.py` |
+| 1 | **calibration** on a few *unlabeled* prompts: on the full-precision trajectory, per-window local divergence $\kappa_k(b)$ at the committed positions and downstream influence $\iota_k$ | `t2quant/calibrate.py`, `t2quant/data.py` |
 | 2 | predicted gain $g_k(b) = \iota_k[\kappa_k(b_0) - \kappa_k(b)]$ and **exact dynamic-programming allocation** at the uniform budget | `t2quant/allocate.py` |
 | 3 | evaluation: full precision vs uniform $A_\mathrm{target}$ vs the T²Quant schedule on held-out problems | `t2quant/sampler.py`, `t2quant/data.py` |
 
@@ -47,34 +47,22 @@ them are the paper's test split).
 ## Configuration
 All settings are in the `CFG` dictionary of the notebook's second cell (and the matching command-line flags): generation length /
 steps / windows, weight bits, the activation precision levels (`levels`, default `(3, 4, 5, 6, 7, 8)`, the per-window choices) and
-target `b0` (default 4), the number of calibration prompts (GSM8K 16, HumanEval 50) and of evaluation problems, and two calibration
-choices:
-* `trajectory`: the states replayed for $\kappa$ and $\iota$ — the full-precision trajectory (`"fp"`, default, as in the paper) or
-  the quantized model's own uniform $A_\mathrm{target}$ trajectory (`"target"`);
-* `kappa_positions`: the committed positions $\kappa$ sums over — the score-relevant ones (`"relevant"`, default, Eq. 3 of the paper;
-  GSM8K: the answer text before any follow-up "Question:", HumanEval: the code inside the python fence) or every committed position
-  (`"all"`).
+target `b0` (default 4), the number of calibration prompts (GSM8K 16, HumanEval 50) and of evaluation problems, and the
+calibration trajectory, `trajectory`: the states replayed for $\kappa$ and $\iota$ are those of the full-precision model (`"fp"`,
+default, as in the paper) or of the quantized model at uniform $A_\mathrm{target}$ (`"target"`). $\kappa$ sums over every committed
+position: the calibration needs no labels and no task-specific parsing of the outputs.
 
 ## Results
 LLaDA-8B-Instruct, 4-bit GPTQ weights, 4.00 average activation bits (levels 3–8, target 4), 512 tokens / 128 steps / 16 windows,
-default calibration (full-precision trajectory, score-relevant positions). Fixed / broken: problems T²Quant solves and uniform W4A4
-does not, and the reverse; p: exact two-sided sign test on those problems.
+default calibration. Fixed / broken: problems T²Quant solves and uniform W4A4 does not, and the reverse; p: exact two-sided sign test
+on those problems.
 
 | task (evaluation problems) | calibration prompts | T²Quant schedule (bits per window) | full precision | uniform W4A4 | T²Quant | fixed / broken | p |
 |---|---|---|---|---|---|---|---|
 | GSM8K (first 500 test) | 16 train questions | 8 5 5 5 5 4 4 4 3 3 3 3 3 3 3 3 | 51.2 | 46.6 | **51.4** | 84 / 60 | 0.055 |
-| HumanEval (100, the paper's split) | 50 problems | 4 4 4 4 4 4 5 5 4 5 5 4 3 3 3 3 | 25.0 | 23.0 | **25.0** | 7 / 5 | 0.77 |
 
-The two tasks get different schedules from the same procedure: GSM8K moves precision to the first windows, HumanEval to the middle of
-the trajectory, where the code is written.
-
-Calibration choices (same setting; T²Quant accuracy, uniform W4A4 as above):
-
-| trajectory | positions | GSM8K | HumanEval |
-|---|---|---|---|
-| full precision | score-relevant (default) | 51.4 | **25.0** |
-| full precision | all committed | 51.4 (same schedule) | 18.0 (schedule 5 4 4 … 4 3) |
-| uniform $A_\mathrm{target}$ | score-relevant | 52.4 | 20.0 |
+The schedule moves precision to the first windows of the trajectory and pays for it at the end, and T²Quant recovers the
+full-precision accuracy at the same average bits as uniform W4A4.
 
 Checks: `scripts/check_sampler_parity.py` (the sampler reproduces LLaDA's reference `generate` token for token, full precision and
 W4A4) and `scripts/check_rotation.py` (the rotation leaves the full-precision model's predictions unchanged up to bf16 rounding:

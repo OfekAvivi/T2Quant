@@ -2,8 +2,7 @@
 
   p_fp is the full-precision reference model (`fp_model`); p_b the quantized model with b-bit activations.
   kappa_k(b) = mean over prompts of sum_{t in window k} sum_{j committed at t} KL(p_fp(.|x_t)_j || p_b(.|x_t)_j)
-               (every state x_t of the full-precision trajectory replayed at bit-width b; the state is held fixed; with `relevant`,
-               only the committed positions j in the score-relevant set R_i)
+               (every state x_t of the full-precision trajectory replayed at bit-width b; the state is held fixed)
   iota_k     = mean over prompts of sum_{j still masked after window k} KL(p_fp(.|x_after)_j || p_fp(.|x_before)_j)   (same states)
   g_k(b)     = iota_k * [kappa_k(b0) - kappa_k(b)]   (predicted gain of moving window k from b0 to b)
 Only the rows that enter a KL are kept (committed positions, still-masked positions), so memory stays at one batch of logits. When the
@@ -31,20 +30,16 @@ def _gen_logits(model, prompt, states, eos="last"):
 
 
 @torch.no_grad()
-def calibrate(model, quant, fp_model, prompts, levels=(3, 4, 5, 6, 7, 8), b0=4, gen_len=256, steps=64, windows=8, batch=8, relevant=None,
+def calibrate(model, quant, fp_model, prompts, levels=(3, 4, 5, 6, 7, 8), b0=4, gen_len=256, steps=64, windows=8, batch=8,
               trajectory="fp", eos="last", log=print):
-    """prompts: list of [1, P] id tensors. relevant: optional callable(final ids) -> set of score-relevant positions R_i; kappa then sums
-    only over committed positions in R_i (None = every committed position). trajectory: "fp" (default) replays the full-precision
-    trajectory, "target" the uniform b0 one. Returns dict(kappa {b: [K]}, iota [K], gain {b: [K]}, traces)."""
+    """prompts: list of [1, P] id tensors. kappa sums over every position committed in the window. trajectory: "fp" (default) replays
+    the full-precision trajectory, "target" the uniform b0 one. Returns dict(kappa {b: [K]}, iota [K], gain {b: [K]}, traces)."""
     spw = steps // windows; kappa = {b: torch.zeros(windows) for b in levels}; iota = torch.zeros(windows); traces = []
     for n, prompt in enumerate(prompts):
         sched = None if trajectory == "fp" else [b0] * windows
         _, tr = (generate(fp_model, None, prompt, gen_len, steps, None, windows, record=True, eos=eos) if trajectory == "fp"
                  else generate(model, quant, prompt, gen_len, steps, sched, windows, record=True, eos=eos))       # reference trajectory
         traces.append(tr); S = tr["states"]
-        if relevant is not None:                                                                        # keep only score-relevant commits
-            R = torch.tensor(sorted(relevant(tr["final"])), dtype=torch.long)
-            tr["commits"] = [c[torch.isin(c, R)] for c in tr["commits"]]
         for i in range(0, steps, batch):                                                                # kappa: replay each state
             ts = range(i, min(i + batch, steps)); rows = [(r, t, tr["commits"][t]) for r, t in enumerate(ts)]
             lg = _gen_logits(fp_model, prompt, S[i:i + len(ts)], eos)

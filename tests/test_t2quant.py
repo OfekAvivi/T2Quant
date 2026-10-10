@@ -100,23 +100,10 @@ def test_gptq_quantizes_to_4_bit_grid_and_keeps_function_close():
     assert torch.nn.functional.cosine_similarity(out.flatten(), ref.flatten(), dim=0) > 0.9
 
 
-class _CharTok:
-    """Tokenizer stub: token i is the character chr(i) (special ids >= 126000 decode to nothing)."""
-    def decode(self, ids, skip_special_tokens=True):
-        return "".join(chr(i) for i in ids if i < 126000)
-
-
-def test_relevant_positions_stop_at_question():
-    from t2quant.data import relevant_positions
-    text = "The answer is 3 Question: x"; ids = [ord(c) for c in text] + [126081] * 3
-    R = relevant_positions(ids, _CharTok())
-    assert R == set(range(text.index("Question:")))
-
-
-def test_calibrate_with_relevance_and_fp_trajectory():
+def test_calibrate_on_both_trajectories():
     from t2quant import calibrate
     m = TinyLLaDA(); q = ActQuant(m); prompts = [torch.randint(0, 1000, (1, 5)) for _ in range(2)]
-    for kw in (dict(relevant=lambda final: set(range(8))), dict(trajectory="fp")):
+    for kw in (dict(trajectory="fp"), dict(trajectory="target")):
         cal = calibrate(m, q, TinyLLaDA(), prompts, levels=(3, 4, 8), b0=4, gen_len=32, steps=8, windows=4, batch=4, log=lambda *_: None, **kw)
         assert all((cal["kappa"][b] >= 0).all() for b in (3, 4, 8)) and (cal["gain"][4] == 0).all()
 
@@ -143,14 +130,11 @@ def test_transfer_counts_match_llada():
     c = transfer_counts(10, 4); assert c == [3, 3, 2, 2] and sum(c) == 10
 
 
-def test_humaneval_scoring_and_relevance():
+def test_humaneval_scoring():
     from t2quant import data
     row = {"question": "def add(a, b):\n    \"\"\"add\"\"\"\n", "test": "def check(f):\n    assert f(1, 2) == 3\n", "entry_point": "add"}
     assert data.humaneval_correct("Sure:\n```python\ndef add(a, b):\n    return a + b\n```", row)
     assert data.humaneval_correct("    return a + b", row) and not data.humaneval_correct("    return a - b", row)
-    text = "x ```python\ndef f():\n    pass\n``` done"; ids = [ord(c) for c in text]
-    R = data.humaneval_relevant_positions(ids, _CharTok()); s = text.index("def"); e = text.index("```", s)
-    assert R == set(range(s, e))
 
 
 def test_report_statistics(tmp_path):

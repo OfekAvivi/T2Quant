@@ -10,7 +10,7 @@ quantization, *when* during denoising precision matters depends on the task. T²
 activation precision over the denoising trajectory at a **fixed average bit budget**:
 
 1. **Calibration** (a few unlabeled prompts): for each denoising window, the local divergence $\\kappa_k(b)$ between full-precision
-   and $b$-bit predictions at the score-relevant positions the window commits, and the window's downstream influence $\\iota_k$ on
+   and $b$-bit predictions at the positions the window commits, and the window's downstream influence $\\iota_k$ on
    positions not yet generated.
 2. **Predicted gain** of moving window $k$ from the target precision $b_0$ to $b$: $g_k(b) = \\iota_k\\,[\\kappa_k(b_0) - \\kappa_k(b)]$.
 3. **Allocation**: an exact dynamic program picks one precision per window, maximizing $\\sum_k g_k(b_k)$ at the budget of uniform $b_0$.
@@ -31,7 +31,6 @@ CFG = dict(
     levels=(3, 4, 5, 6, 7, 8), b0=4,      # activation bits a window may use; budget = uniform A_target (b0)
     clip=0.7,                             # activation clip ratio below 8 bits
     n_calib=16,                           # unlabeled calibration prompts (GSM8K train questions; answers never read)
-    kappa_positions="relevant",           # "relevant": score-relevant committed positions R_i (Eq. 3); "all": every committed position
     trajectory="fp",                      # states replayed for kappa and iota: full precision ("fp") or the uniform A_target one ("target")
     n_eval=200,                           # GSM8K test problems for the evaluation
 )
@@ -54,13 +53,11 @@ for name, m, qz, sched in (("full precision", fp_model, None, None), (f"uniform 
 ("md", """## 1. Label-free calibration
 Generate with the full-precision model on a few unlabeled prompts, record every intermediate state, and replay each state with the
 quantized model at every activation precision $b$ (the state is held fixed, so only the precision differs). $\\kappa_k(b)$ sums
-KL(full precision ‖ $b$-bit) over the score-relevant positions committed in window $k$ (for GSM8K, the answer text before any
-"Question:"; read from the model's own output, no answers needed); $\\iota_k$ measures how much window $k$'s commitments change the
+KL(full precision ‖ $b$-bit) over the positions committed in window $k$ (no answers or task-specific parsing needed); $\\iota_k$ measures how much window $k$'s commitments change the
 full-precision model's beliefs about the positions still masked afterwards."""),
 ("code", """calib = [data.prompt_ids(tok, r["question"]) for r in data.load("train", CFG["n_calib"])]
-rel = (lambda final: data.relevant_positions(final, tok)) if CFG["kappa_positions"] == "relevant" else None
 cal = calibrate(model, quant, fp_model, calib, CFG["levels"], CFG["b0"], CFG["gen_len"], CFG["steps"], CFG["windows"],
-                relevant=rel, trajectory=CFG["trajectory"])
+                trajectory=CFG["trajectory"])
 
 K = CFG["windows"]; x = np.arange(1, K + 1)
 fig, ax = plt.subplots(1, 3, figsize=(12, 3))
@@ -100,11 +97,10 @@ plt.ylabel("GSM8K accuracy (%)"); plt.xticks(rotation=15); plt.tight_layout(); p
 ("md", """## Differences from the paper's setup
 * **Scale**: 256 tokens / 64 steps / 8 windows, 16 calibration prompts and 200 test problems, versus 512 tokens / 128 steps / 16 windows
   and the full evaluation sets in the paper; one task, one rotation seed.
-* **Task**: GSM8K only; other tasks need their prompt format, scorer and score-relevant span in `t2quant/data.py`. Everything else
+* **Task**: GSM8K only; other tasks need their prompt format and scorer in `t2quant/data.py`. Everything else
   (`calibrate`, `allocate`, `generate`) is task-agnostic.
-* **Calibration choices** are explicit in `CFG`: `kappa_positions` (score-relevant positions as in Eq. 3, or every committed
-  position) and `trajectory` (the states replayed for $\\kappa$ and $\\iota$: the full-precision trajectory, as in the paper, or the uniform
-  $A_\\mathrm{target}$ one).
+* **Calibration trajectory** is explicit in `CFG`: `trajectory` (the states replayed for $\\kappa$ and $\\iota$: the full-precision
+  trajectory, as in the paper, or the uniform $A_\\mathrm{target}$ one).
 * Change `levels` / `b0` in `CFG` to try other precision sets. With a coarse set such as `(3, 4, 8)` and only 8 windows, paying for
   one 8-bit window takes four 3-bit windows, and the DP may find no profitable trade (it then returns the uniform schedule)."""),
 ]
