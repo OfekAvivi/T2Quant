@@ -30,7 +30,7 @@ CFG = dict(
     clip=0.7,                             # activation clip ratio below 8 bits
     n_calib=16,                           # unlabeled calibration prompts (GSM8K train questions; answers never read)
     kappa_positions="relevant",           # "relevant": score-relevant committed positions R_i (Eq. 3); "all": every committed position
-    trajectory="target",                  # states replayed for kappa: the uniform A_target trajectory ("target") or full precision ("fp")
+    trajectory="fp",                      # states replayed for kappa and iota: full precision ("fp") or the uniform A_target one ("target")
     n_eval=200,                           # GSM8K test problems for the evaluation
 )
 torch.manual_seed(0)
@@ -52,8 +52,8 @@ for name, m, qz, sched in (("full precision", fp_model, None, None), (f"uniform 
     print(f"--- {name}:", tok.decode(out, skip_special_tokens=True)[:400])
 
 # ## 1. Label-free calibration
-# Run the quantized model at uniform $A_\mathrm{target}$ on a few unlabeled prompts, record every intermediate state, and replay each
-# state at every activation precision $b$ (the state is held fixed, so only the precision differs). $\kappa_k(b)$ sums
+# Generate with the full-precision model on a few unlabeled prompts, record every intermediate state, and replay each state with the
+# quantized model at every activation precision $b$ (the state is held fixed, so only the precision differs). $\kappa_k(b)$ sums
 # KL(full precision ‖ $b$-bit) over the score-relevant positions committed in window $k$ (for GSM8K, the answer text before any
 # "Question:"; read from the model's own output, no answers needed); $\iota_k$ measures how much window $k$'s commitments change the
 # full-precision model's beliefs about the positions still masked afterwards.
@@ -106,6 +106,7 @@ plt.ylabel("GSM8K accuracy (%)"); plt.xticks(rotation=15); plt.tight_layout(); p
 # * **Task**: GSM8K only; other tasks need their prompt format, scorer and score-relevant span in `t2quant/data.py`. Everything else
 #   (`calibrate`, `allocate`, `generate`) is task-agnostic.
 # * **Calibration choices** are explicit in `CFG`: `kappa_positions` (score-relevant positions as in Eq. 3, or every committed
-#   position) and `trajectory` (the states replayed for $\kappa$: the uniform $A_\mathrm{target}$ trajectory or the full-precision one).
+#   position) and `trajectory` (the states replayed for $\kappa$ and $\iota$: the full-precision trajectory, as in the paper, or the uniform
+#   $A_\mathrm{target}$ one).
 # * Change `levels` / `b0` in `CFG` to try other precision sets. With a coarse set such as `(3, 4, 8)` and only 8 windows, paying for
 #   one 8-bit window takes four 3-bit windows, and the DP may find no profitable trade (it then returns the uniform schedule).

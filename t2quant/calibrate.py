@@ -2,17 +2,19 @@
 
   p_fp is the full-precision reference model (`fp_model`); p_b the quantized model with b-bit activations.
   kappa_k(b) = mean over prompts of sum_{t in window k} sum_{j committed at t} KL(p_fp(.|x_t)_j || p_b(.|x_t)_j)
-               (every state x_t of the uniform A_target trajectory replayed at bit-width b; the state is held fixed)
-  iota_k     = mean over prompts of sum_{j still masked after window k} KL(p_fp(.|x_after)_j || p_fp(.|x_before)_j)
+               (every state x_t of the full-precision trajectory replayed at bit-width b; the state is held fixed; with `relevant`,
+               only the committed positions j in the score-relevant set R_i)
+  iota_k     = mean over prompts of sum_{j still masked after window k} KL(p_fp(.|x_after)_j || p_fp(.|x_before)_j)   (same states)
   g_k(b)     = iota_k * [kappa_k(b0) - kappa_k(b)]   (predicted gain of moving window k from b0 to b)
-Only the rows that enter a KL are kept (committed positions, still-masked positions), so memory stays at one batch of logits.
+Only the rows that enter a KL are kept (committed positions, still-masked positions), so memory stays at one batch of logits. When the
+sampler bans end-of-sequence (eos="ban"), the KLs are taken over the vocabulary without that column, the support the sampler uses.
 """
 from __future__ import annotations
 
 import torch
 import torch.nn.functional as F
 
-from .sampler import MASK_ID, generate
+from .sampler import EOS_ID, MASK_ID, generate
 
 
 def _kl(lp, lq):   # KL(p || q) per row from log-probabilities (clamped at 0: float rounding can give -1e-6 when p == q)
@@ -20,18 +22,20 @@ def _kl(lp, lq):   # KL(p || q) per row from log-probabilities (clamped at 0: fl
 
 
 @torch.no_grad()
-def _gen_logits(model, prompt, states):
-    """logits of the generation region for a batch of states [n, G] -> [n, G, V] (model dtype, on the model's device)."""
+def _gen_logits(model, prompt, states, eos="last"):
+    """logits of the generation region for a batch of states [n, G] -> [n, G, V] (model dtype, on the model's device); with eos="ban"
+    the end-of-sequence column is removed."""
     dev = next(model.parameters()).device; S = states.to(dev)
-    return model(torch.cat([prompt.to(dev).expand(len(S), -1), S], 1)).logits[:, prompt.shape[1]:]
+    lg = model(torch.cat([prompt.to(dev).expand(len(S), -1), S], 1)).logits[:, prompt.shape[1]:]
+    return torch.cat([lg[..., :EOS_ID], lg[..., EOS_ID + 1:]], -1) if eos == "ban" else lg
 
 
 @torch.no_grad()
 def calibrate(model, quant, fp_model, prompts, levels=(3, 4, 5, 6, 7, 8), b0=4, gen_len=256, steps=64, windows=8, batch=8, relevant=None,
-              trajectory="target", eos="last", log=print):
+              trajectory="fp", eos="last", log=print):
     """prompts: list of [1, P] id tensors. relevant: optional callable(final ids) -> set of score-relevant positions R_i; kappa then sums
-    only over committed positions in R_i (None = every committed position). trajectory: "target" replays the uniform b0 trajectory,
-    "fp" the full-precision one. Returns dict(kappa {b: [K]}, iota [K], gain {b: [K]}, traces)."""
+    only over committed positions in R_i (None = every committed position). trajectory: "fp" (default) replays the full-precision
+    trajectory, "target" the uniform b0 one. Returns dict(kappa {b: [K]}, iota [K], gain {b: [K]}, traces)."""
     spw = steps // windows; kappa = {b: torch.zeros(windows) for b in levels}; iota = torch.zeros(windows); traces = []
     for n, prompt in enumerate(prompts):
         sched = None if trajectory == "fp" else [b0] * windows
@@ -43,10 +47,10 @@ def calibrate(model, quant, fp_model, prompts, levels=(3, 4, 5, 6, 7, 8), b0=4, 
             tr["commits"] = [c[torch.isin(c, R)] for c in tr["commits"]]
         for i in range(0, steps, batch):                                                                # kappa: replay each state
             ts = range(i, min(i + batch, steps)); rows = [(r, t, tr["commits"][t]) for r, t in enumerate(ts)]
-            lg = _gen_logits(fp_model, prompt, S[i:i + len(ts)])
+            lg = _gen_logits(fp_model, prompt, S[i:i + len(ts)], eos)
             fp = {t: F.log_softmax(lg[r, idx.to(lg.device)].float(), -1) for r, t, idx in rows}; del lg
             for b in levels:
-                quant.bits = b; lg = _gen_logits(model, prompt, S[i:i + len(ts)]); quant.bits = None
+                quant.bits = b; lg = _gen_logits(model, prompt, S[i:i + len(ts)], eos); quant.bits = None
                 for r, t, idx in rows:
                     if len(idx):
                         kappa[b][t // spw] += _kl(fp[t], F.log_softmax(lg[r, idx.to(lg.device)].float(), -1)).sum().cpu() / len(prompts)
@@ -56,7 +60,7 @@ def calibrate(model, quant, fp_model, prompts, levels=(3, 4, 5, 6, 7, 8), b0=4, 
             still = (ends[k] == MASK_ID)
             if not still.any():
                 continue
-            lg = _gen_logits(fp_model, prompt, torch.stack([S[k * spw], ends[k]])); lg = lg[:, still.to(lg.device)]
+            lg = _gen_logits(fp_model, prompt, torch.stack([S[k * spw], ends[k]]), eos); lg = lg[:, still.to(lg.device)]
             iota[k] += _kl(F.log_softmax(lg[1].float(), -1), F.log_softmax(lg[0].float(), -1)).sum().cpu() / len(prompts)
             del lg
         log(f"calibration prompt {n + 1}/{len(prompts)} done")

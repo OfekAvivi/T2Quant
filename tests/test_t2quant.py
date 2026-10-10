@@ -121,6 +121,22 @@ def test_calibrate_with_relevance_and_fp_trajectory():
         assert all((cal["kappa"][b] >= 0).all() for b in (3, 4, 8)) and (cal["gain"][4] == 0).all()
 
 
+def test_calibration_shards_merge_to_the_full_run():
+    from t2quant import calibrate
+    m = TinyLLaDA(); q = ActQuant(m); fp = TinyLLaDA(); prompts = [torch.randint(0, 1000, (1, 5)) for _ in range(3)]
+    run = lambda ps: calibrate(m, q, fp, ps, levels=(3, 4, 8), b0=4, gen_len=16, steps=8, windows=4, batch=4, log=lambda *_: None)
+    full, a, b = run(prompts), run(prompts[0::2]), run(prompts[1::2])
+    assert torch.allclose(full["iota"], (2 * a["iota"] + b["iota"]) / 3, atol=1e-5)
+    assert all(torch.allclose(full["kappa"][k], (2 * a["kappa"][k] + b["kappa"][k]) / 3, atol=1e-5) for k in (3, 4, 8))
+
+
+def test_calibrate_without_eos_column():
+    from t2quant import calibrate
+    m = TinyLLaDA(); q = ActQuant(m); prompts = [torch.randint(0, 1000, (1, 5))]
+    cal = calibrate(m, q, TinyLLaDA(), prompts, levels=(3, 4, 8), b0=4, gen_len=16, steps=8, windows=4, batch=4, eos="ban", log=lambda *_: None)
+    assert all(torch.isfinite(cal["kappa"][b]).all() for b in (3, 4, 8)) and torch.isfinite(cal["iota"]).all()
+
+
 def test_transfer_counts_match_llada():
     from t2quant.sampler import transfer_counts
     assert transfer_counts(256, 64) == [4] * 64

@@ -96,14 +96,20 @@ def humaneval_relevant_positions(final_ids, tok) -> set:
 
 
 # ---- task registry: calibration prompts never overlap the evaluation problems ---------------------------------------------------
-def task(name: str, tok, n_calib: int, n_eval: int | None):
+N_CALIB = {"gsm8k": 16, "humaneval": 50}       # default number of calibration prompts per task
+
+
+def task(name: str, tok, n_calib: int | None, n_eval: int | None):
     """-> dict(calib=[prompt ids], eval=[(prompt ids, scorer(text) -> bool)], relevant=callable, eos=str)."""
+    n_calib = N_CALIB[name] if n_calib is None else n_calib
     if name == "gsm8k":
         cal = [prompt_ids(tok, r["question"]) for r in load("train", n_calib)]
         ev = [(prompt_ids(tok, r["question"]), (lambda text, g=r["gold"]: correct(text, g))) for r in load("test", n_eval or 1319)]
         return dict(calib=cal, eval=ev, relevant=lambda f: relevant_positions(f, tok), eos="last")
-    if name == "humaneval":                                     # no training split: the first n_calib problems calibrate, the rest evaluate
-        rows = humaneval_load(); cal_rows, ev_rows = rows[:n_calib], rows[n_calib:][:n_eval] if n_eval else rows[n_calib:]
+    if name == "humaneval":     # no training split: a fixed shuffle (seed 0) of the 164 problems; the first n_calib calibrate, the next evaluate
+        import random
+        rows = humaneval_load(); order = list(range(len(rows))); random.Random(0).shuffle(order)
+        cal_rows = [rows[i] for i in order[:n_calib]]; ev_rows = [rows[i] for i in order[n_calib:]][:n_eval]
         return dict(calib=[humaneval_prompt_ids(tok, r["question"]) for r in cal_rows],
                     eval=[(humaneval_prompt_ids(tok, r["question"]), (lambda text, r=r: humaneval_correct(text, r))) for r in ev_rows],
                     relevant=lambda f: humaneval_relevant_positions(f, tok), eos="ban")
