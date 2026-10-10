@@ -15,8 +15,9 @@ import matplotlib; matplotlib.use('Agg')
 # 4. **Deployment**: each denoising step looks up its window's precision.
 # 
 # The notebook runs the full pipeline on GSM8K: W4 (GPTQ) weights with 4-bit activations as the quantized base, 16 calibration prompts and
-# 200 test problems. It needs one GPU with at least 40 GB (a full-precision reference and the quantized model are both loaded) and takes
-# roughly 1.5 hours. Settings that differ from the paper are listed in the last cell.
+# 200 test problems, at the paper's generation setting (512 tokens, 128 steps, 16 windows). It needs one GPU with at least 40 GB (a
+# full-precision reference and the quantized model are both loaded) and takes about 4–5 hours, mostly the evaluation. Settings that differ
+# from the paper are listed in the last cell.
 import torch, numpy as np, matplotlib.pyplot as plt
 from transformers import AutoModel, AutoTokenizer
 from t2quant import ActQuant, allocate, apply_gptq, apply_rotation, calibrate, calibration_windows, generate
@@ -24,7 +25,7 @@ from t2quant import data
 
 CFG = dict(
     model="GSAI-ML/LLaDA-8B-Instruct",
-    gen_len=256, steps=64, windows=8,     # 4 tokens per step; 8 windows of 8 steps
+    gen_len=512, steps=128, windows=16,   # the paper's setting: 4 tokens per step, 16 windows of 8 steps
     weight_bits=4,                        # GPTQ weights (128 x 512 masked WikiText-103 calibration windows)
     levels=(3, 4, 5, 6, 7, 8), b0=4,      # activation bits a window may use; budget = uniform A_target (b0)
     clip=0.7,                             # activation clip ratio below 8 bits
@@ -98,11 +99,11 @@ plt.figure(figsize=(4, 3)); plt.bar(list(res), [100 * v.mean() for v in res.valu
 plt.ylabel("GSM8K accuracy (%)"); plt.xticks(rotation=15); plt.tight_layout(); plt.savefig(f'fig{plt.gcf().number}.png')
 
 # ## Differences from the paper's setup
-# * **Scale**: 256 tokens / 64 steps / 8 windows, 16 calibration prompts and 200 test problems, versus 512 tokens / 128 steps / 16 windows
-#   and the full evaluation sets in the paper; one task, one rotation seed.
+# * **Scale**: the paper's generation setting (512 tokens / 128 steps / 16 windows), with 16 calibration prompts and 200 test problems
+#   instead of the paper's larger evaluation sets; one task, one rotation seed.
 # * **Task**: GSM8K only; other tasks need their prompt format and scorer in `t2quant/data.py`. Everything else
 #   (`calibrate`, `allocate`, `generate`) is task-agnostic.
 # * **Calibration trajectory** is explicit in `CFG`: `trajectory` (the states replayed for $\kappa$ and $\iota$: the full-precision
 #   trajectory, as in the paper, or the uniform $A_\mathrm{target}$ one).
-# * Change `levels` / `b0` in `CFG` to try other precision sets. With a coarse set such as `(3, 4, 8)` and only 8 windows, paying for
-#   one 8-bit window takes four 3-bit windows, and the DP may find no profitable trade (it then returns the uniform schedule).
+# * Change `levels` / `b0` in `CFG` to try other precision sets. With a coarse set such as `(3, 4, 8)`, paying for one 8-bit window
+#   takes four 3-bit windows, and the DP may find no profitable trade (it then returns the uniform schedule).

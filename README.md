@@ -14,8 +14,8 @@ Label-free, task-specific allocation of activation precision over the denoising 
 
 ## Requirements
 * One CUDA GPU with at least 40 GB of memory (the full-precision reference and the quantized model are both loaded in bf16). The
-  notebook takes roughly 1.5 hours (GPTQ about 10–15 minutes, calibration about 15 minutes, evaluation of three configurations on
-  200 problems about an hour).
+  notebook runs at the paper's generation setting and takes about 4–5 hours (GPTQ about 10–15 minutes, calibration under an hour,
+  evaluation of three configurations on 200 problems the rest).
 * Python 3.10+, then `pip install -r requirements.txt`.
 * The model (`GSAI-ML/LLaDA-8B-Instruct`), GSM8K, HumanEval and WikiText-103 (GPTQ calibration) are downloaded from the Hugging Face
   Hub on first use.
@@ -69,8 +69,8 @@ W4A4) and `scripts/check_rotation.py` (the rotation leaves the full-precision mo
 97.9% top-1 agreement, mean KL 3e-4 nats on masked positions).
 
 ## Differences from the paper's setup
-* The notebook uses 256 generated tokens / 64 steps / 8 windows, 16 calibration prompts and 200 GSM8K test problems; the command line
-  runs the paper's 512 / 128 / 16 (Results).
+* The notebook evaluates 200 GSM8K test problems with 16 calibration prompts, at the paper's 512 tokens / 128 steps / 16 windows; the
+  command line runs larger evaluations (Results).
 * LLaDA-8B-Instruct and the QuaRot-style + GPTQ base only; the paper also composes the schedule with other quantization methods and
   evaluates further models and tasks. GSM8K is evaluated on the first 500 test problems (the paper uses a random split of the test set).
 * The sampler re-implements LLaDA's low-confidence remasking (greedy, one block; end-of-sequence committed last for GSM8K and never
