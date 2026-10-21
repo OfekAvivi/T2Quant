@@ -115,7 +115,7 @@
       }
     }
     function final() { cancelAnimationFrame(raf); paintUpTo(T); renderStrip(strip, sched[task]); setMeta(T); }
-    function play() {
+    function play(onDone) {
       cancelAnimationFrame(raf);
       if (reduceMotion) return final();
       paintUpTo(0); setMeta(0); renderStrip(strip, sched[task], 0);
@@ -135,15 +135,35 @@
         }
         setMeta(done);
         if (done < T) raf = requestAnimationFrame(tick);
+        else if (onDone) onDone();
       };
       raf = requestAnimationFrame(tick);
     }
-    $$("#replay .seg button").forEach(b => b.addEventListener("click", () => {
-      $$("#replay .seg button").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
-      task = b.dataset.task; play();
-    }));
-    $("#replay-play").addEventListener("click", play);
-    final(); // complete at rest; animation runs on interaction
+
+    // Autoplay: run each schedule in turn, hold the finished grid, then move on. Any click hands control to the viewer.
+    const CYCLE = ["gsm8k", "humaneval", "mmlupro", "uniform"], HOLD_MS = 2600;
+    let auto = !reduceMotion, hold = 0, onScreen = true, waiting = false;
+    function select(t) {
+      task = t;
+      $$("#replay .seg button").forEach(x => x.setAttribute("aria-pressed", String(x.dataset.task === t)));
+    }
+    function advance() {
+      if (!auto) return;
+      if (!onScreen || document.hidden) { waiting = true; return; } // resume when the replay is back in view
+      waiting = false;
+      select(CYCLE[(CYCLE.indexOf(task) + 1) % CYCLE.length]);
+      run();
+    }
+    function run() { play(() => { if (auto) hold = setTimeout(advance, HOLD_MS); }); }
+    function takeOver() { auto = false; waiting = false; clearTimeout(hold); }
+    if ("IntersectionObserver" in window) {
+      new IntersectionObserver(es => { onScreen = es[0].isIntersecting; if (onScreen && waiting) advance(); }).observe(grid);
+    }
+    document.addEventListener("visibilitychange", () => { if (!document.hidden && waiting) advance(); });
+
+    $$("#replay .seg button").forEach(b => b.addEventListener("click", () => { takeOver(); select(b.dataset.task); play(); }));
+    $("#replay-play").addEventListener("click", () => { takeOver(); play(); });
+    if (auto) run(); else final(); // reduced motion: show the finished grid
   })();
 
   /* ---------- 2. sensitivity profile ---------- */
