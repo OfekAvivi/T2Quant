@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>T²Quant</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="T²Quant allocates activation precision across the denoising steps of diffusion language models, per task, from a label-free signal, at a fixed average bit budget.">
+<meta property="og:title" content="T²Quant: Different Tasks, Different Timesteps">
+<meta property="og:description" content="Temporal task-aware quantization for diffusion language models.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='6' width='6' height='20' rx='1.5' fill='%23212836'/%3E%3Crect x='10' y='6' width='6' height='20' rx='1.5' fill='%236f7a8e'/%3E%3Crect x='18' y='6' width='6' height='20' rx='1.5' fill='%23c3c9d4'/%3E%3Crect x='26' y='6' width='4' height='20' rx='1.5' fill='%23e6e9ef'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap">
+<link rel="stylesheet" href="assets/style.css">
+<script>
+  /* ---- Site settings: the only lines you need to edit ----
+     arxiv: the arXiv id once the paper is up (e.g. "2610.01234"). It turns on the arXiv and PDF buttons and adds
+     eprint fields to the BibTeX. Leave it "" until then. */
+  window.T2Q_SITE = {
+    arxiv: "",
+    code: "https://github.com/OfekAvivi/T2Quant",
+    venue: "Preprint"
+  };
+</script>
+</head>
+<body>
+
+<nav class="nav" aria-label="Sections">
+  <div class="wrap">
+    <a class="brand" href="#top">T²Quant</a>
+    <div class="nav-links">
+      <a href="#overview">Overview</a>
+      <a href="#finding">Finding</a>
+      <a href="#method">Method</a>
+      <a href="#allocator">Allocator</a>
+      <a href="#results">Results</a>
+      <a href="#ablations">Ablations</a>
+      <a href="#code">Use it</a>
+      <a href="#cite">BibTeX</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <div class="wrap stack">
+    <div class="hero-head">
+      <div class="eyebrow"><span class="tag">T²Quant</span><span>Task- and time-aware quantization</span><span class="venue" id="venue">Preprint</span></div>
+      <h1>Different Tasks, Different Timesteps<span class="sub">Temporal Task-Aware Quantization for Diffusion Language Models</span></h1>
+
+      <div class="authors">
+        <div class="author-list">
+          <a href="https://github.com/OfekAvivi">Ofek Avivi</a><sup>1,2*</sup>
+          <a href="https://openreview.net/profile?id=~Eliron_Rahimi1">Eliron Rahimi</a><sup>1,2*</sup>
+          <a href="https://www.cs.technion.ac.il/~mendlson/">Avi Mendelson</a><sup>1</sup>
+          <a href="https://chaimbaskin.bgu.ac.il/">Chaim Baskin</a><sup>2</sup>
+        </div>
+        <div class="affils">
+          <span><sup>1</sup>Technion – Israel Institute of Technology</span>
+          <span><sup>2</sup>INSIGHT Lab, School of Electrical and Computer Engineering, Ben-Gurion University of the Negev</span>
+          <span><sup>*</sup>Equal contribution</span>
+        </div>
+        <div class="logos" aria-label="Affiliations">
+          <img src="assets/logos/technion-wide.svg" alt="Technion – Israel Institute of Technology">
+          <img class="bgu" src="assets/logos/bgu-wide.svg" alt="Ben-Gurion University of the Negev">
+          <img src="assets/logos/insight-wide.png" alt="INSIGHT Lab">
+        </div>
+      </div>
+
+      <div class="buttons">
+        <a class="btn" id="btn-arxiv" aria-disabled="true">
+          <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 1.5h5.5L13 5v9.5H4z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M9 1.5V5h4" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+          <span>arXiv</span><span class="soon">soon</span>
+        </a>
+        <a class="btn primary" id="btn-code" href="https://github.com/OfekAvivi/T2Quant">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8a8 8 0 0 0 5.47 7.59c.4.07.55-.17.55-.38v-1.33c-2.23.48-2.7-1.07-2.7-1.07-.36-.92-.89-1.17-.89-1.17-.73-.5.05-.49.05-.49.8.06 1.23.83 1.23.83.72 1.22 1.88.87 2.34.66.07-.52.28-.87.5-1.07-1.78-.2-3.65-.89-3.65-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.66 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+          <span>Code</span>
+        </a>
+        <a class="btn" href="#cite">
+          <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 4.5h10M3 8h10M3 11.5h6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+          <span>BibTeX</span>
+        </a>
+      </div>
+    </div>
+
+    <div class="highlights">
+      <div><span class="k">Finding</span><p>Precision matters at <b>different denoising steps for different tasks</b>: GSM8K in the first eight steps, HumanEval in the middle of the trajectory.</p></div>
+      <div><span class="k">Signal</span><p>Where extra bits pay off is predictable <b>without labels</b>: quantization divergence times each window's influence on the rest of the generation.</p></div>
+      <div><span class="k">Result</span><p>Added to three diffusion-LM quantizers, T²Quant raises average accuracy on all nine base/model pairs, by <b>up to 6.7 points</b> at the same 4.00 average bits.</p></div>
+    </div>
+
+    <figure class="figure framed" id="replay" aria-labelledby="replay-title" style="margin:0">
+      <div class="fig-top">
+        <div class="fig-title" id="replay-title">One generation, one precision budget</div>
+        <div class="ctrl-row">
+          <div class="seg" role="group" aria-label="Schedule">
+            <button type="button" data-task="gsm8k" aria-pressed="true">GSM8K</button>
+            <button type="button" data-task="humaneval" aria-pressed="false">HumanEval</button>
+            <button type="button" data-task="mmlupro" aria-pressed="false">MMLU-Pro</button>
+            <button type="button" data-task="uniform" aria-pressed="false">Uniform W4A4</button>
+          </div>
+          <button type="button" class="ghost" id="replay-play">
+            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 1.5v9l8-4.5z" fill="currentColor"/></svg>
+            <span>Replay</span>
+          </button>
+        </div>
+      </div>
+      <div class="replay-grid" id="replay-grid" aria-hidden="true"></div>
+      <div class="replay-meta" id="replay-meta"><span>step <b>128</b> / 128</span><span>window <b>16</b> / 16</span><span>average <b>4.00</b> bits</span></div>
+      <div class="strip-row">
+        <div class="lbl"><b>Schedule</b>bits per window</div>
+        <div class="strip" id="replay-strip"></div>
+      </div>
+      <div class="legend" id="replay-legend">
+        <span><span class="sw mask"></span>masked</span>
+        <span><span class="sw" data-b="3"></span>3-bit</span>
+        <span><span class="sw" data-b="4"></span>4-bit</span>
+        <span><span class="sw" data-b="6"></span>6-bit</span>
+        <span><span class="sw" data-b="8"></span>8-bit activations</span>
+      </div>
+      <figcaption class="caption">A 512-token generation by LLaDA-8B-Instruct: 128 denoising steps, 4 tokens committed per step, 16 windows of 8 steps. Each token is shaded by the activation width of the step that committed it. Every schedule averages exactly 4.00 bits, the same as uniform W4A4. The schedules are calibrated per task (levels 3, 4, 6, 8); the order in which tokens unmask is illustrative.</figcaption>
+    </figure>
+  </div>
+</header>
+
+<main>
+  <section class="block" id="overview">
+    <div class="wrap stack">
+      <div class="sec-head">
+        <span class="sec-num">01 · Overview</span>
+        <h2>Precision as a resource spent over time</h2>
+      </div>
+      <p class="abstract">Diffusion Language Models (DLMs) introduce unique quantization challenges due to their iterative denoising process. In this work, we reveal that quantization sensitivity is both task- and time-dependent, with different downstream tasks exhibiting distinct precision requirements across denoising steps. We further show that these patterns can be predicted without ground-truth labels or task-specific evaluation metrics. Building on these findings, we introduce <strong>T²Quant</strong>, a task and time-aware mixed-precision quantization framework that uses a label-free sensitivity signal to optimally allocate activation precision across denoising steps under a fixed bit-width budget. Extensive experiments across three DLMs and six benchmarks demonstrate that T²Quant consistently improves the average accuracy of existing quantization methods, achieving gains of up to 6.7 percentage points under the same budget.</p>
+      <div class="stats">
+        <div class="stat"><span class="v">9 / 9</span><span class="d">base/model pairs gain average accuracy</span></div>
+        <div class="stat"><span class="v">42 / 54</span><span class="d">benchmark comparisons improve; GSM8K and ARC-C improve in all nine</span></div>
+        <div class="stat"><span class="v">4.00</span><span class="d">average activation bits, the same as uniform W4A4</span></div>
+        <div class="stat"><span class="v">16</span><span class="d">unlabeled prompts recover about 75% of the gain</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="finding">
+    <div class="wrap stack">
+      <div class="sec-head">
+        <span class="sec-num">02 · Finding</span>
+        <h2>When precision matters depends on the task</h2>
+        <p class="lede">Uniform activation quantization treats every denoising step alike. Measured at the positions each window commits, the damage is concentrated, and it is concentrated in different places for different tasks.</p>
+      </div>
+      <div class="figure">
+        <div class="fig-top">
+          <div class="fig-title">Quantization divergence over the denoising trajectory</div>
+          <div class="seg" role="group" aria-label="Model" id="profile-model">
+            <button type="button" data-model="llada8b_instruct" aria-pressed="true">LLaDA-8B-Instruct</button>
+            <button type="button" data-model="llada15" aria-pressed="false">LLaDA-1.5-8B</button>
+          </div>
+        </div>
+        <div class="legend">
+          <span><span class="line" style="border-color:var(--s-gsm8k)"></span>GSM8K</span>
+          <span><span class="line" style="border-color:var(--s-humaneval)"></span>HumanEval</span>
+          <span><span class="line" style="border-color:var(--s-mmlupro)"></span>MMLU-Pro</span>
+        </div>
+        <div class="chart" id="chart-profile" style="height:300px"></div>
+        <p class="caption">KL(p<sub>fp</sub> ‖ p<sub>W4A4</sub>) at the score-relevant positions committed in each 8-step window, per committed position, normalized to each task's peak (256 calibration prompts; 50 on HumanEval; full-precision trajectory, W4A4 base). The paper's Figure 1 measures the same quantity along the W4A4 trajectory. Hover for values.</p>
+      </div>
+      <div class="two">
+        <div class="prose">
+          <p><strong>Time.</strong> A uniform spread would give each of the 16 windows 6.25% of the task-relevant divergence. Along the W4A4 trajectory of LLaDA-8B-Instruct, GSM8K's first window carries 27% (4.4× uniform) and its first quarter 55%. On HumanEval, five mid-trajectory windows (steps 32–71) carry 52%.</p>
+          <p><strong>Task.</strong> GSM8K is strongly front-loaded. MMLU-Pro is early but broad: its first four windows are all within 10% of its peak. HumanEval is insensitive early and peaks broadly around steps 40–63. The profiles carry over to LLaDA-1.5 (per-window correlation 0.99, 0.98 and 0.92), so they survive preference alignment.</p>
+        </div>
+        <div class="takeaway"><span class="k">Key takeaway</span>Sensitivity varies across denoising steps, and the pattern differs by task. A single fixed temporal schedule is unlikely to suit every task.</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="method">
+    <div class="wrap stack">
+      <div class="sec-head">
+        <span class="sec-num">03 · Method</span>
+        <h2>Profile, score, allocate</h2>
+        <p class="lede">T²Quant does not change the quantizer, the weights or the sampler. It only decides which activation width each denoising window runs at, and it needs a few unlabeled prompts from the task to do so.</p>
+      </div>
+      <div class="steps method-steps">
+        <div class="step">
+          <div class="step-text">
+          <h3>Profile local divergence</h3>
+          <p>Generate a full-precision reference trajectory per calibration prompt and replay each saved state at every candidate width <i>b</i>. Holding the state fixed isolates the local effect of precision.</p>
+          </div>
+          <div class="step-eqs">
+          <div class="eq tex" data-display="1" data-tex="\kappa_{\tau,k}(b)=\frac{\sum_i\sum_{t\in\mathcal W_k}\sum_{j\in C_{i,t}} D_{\mathrm{KL}}\big(p^{\mathrm{fp}}_{i,t,j}\,\Vert\,p^{(b)}_{i,t,j}\big)}{\sum_i\sum_{t\in\mathcal W_k}|C_{i,t}|}"><span class="tex-fallback">κ_τ,k(b) = Σ KL(p_fp ‖ p_b) over committed positions in window k / number committed</span></div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-text">
+          <h3>Weight by influence</h3>
+          <p>A window matters only if its commitments steer what comes after. Influence is how much they move the full-precision model's beliefs about the positions still masked.</p>
+          </div>
+          <div class="step-eqs">
+          <div class="eq tex" data-display="1" data-tex="\iota_{i,k}=\sum_{j\in M_{i,k}} D_{\mathrm{KL}}\big(p^{\mathrm{fp}}_j(\cdot\mid x^+_{i,k})\,\Vert\,p^{\mathrm{fp}}_j(\cdot\mid x^-_{i,k})\big)"><span class="tex-fallback">ι_i,k = Σ over still-masked j of KL(p_fp(·|after) ‖ p_fp(·|before))</span></div>
+          <div class="eq tex" data-display="1" data-tex="g_{\tau,k}(b)=\bar\iota_{\tau,k}\,\big[\kappa_{\tau,k}(b_0)-\kappa_{\tau,k}(b)\big]"><span class="tex-fallback">g_τ,k(b) = ῑ_τ,k [κ_τ,k(b0) − κ_τ,k(b)]</span></div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-text">
+          <h3>Allocate exactly</h3>
+          <p>Pick one width per window to maximize the predicted gain at the uniform budget. A dynamic program over windows and cumulative cost finds the global optimum, and returns the uniform schedule when no trade pays.</p>
+          </div>
+          <div class="step-eqs">
+          <div class="eq tex" data-display="1" data-tex="\mathbf b^{*}_{\tau}\in\arg\max_{\mathbf b\in\mathcal B^{K}}\sum_{k=1}^{K} g_{\tau,k}(b_k)\ \ \text{s.t.}\ \sum_{k=1}^{K} c_k(b_k)=C_0"><span class="tex-fallback">b* = argmax Σ g_k(b_k) s.t. Σ c_k(b_k) = C0</span></div>
+          <div class="eq tex" data-display="1" data-tex="F_k(z)=\max_{b\in\mathcal B,\ c_k(b)\le z}\big\{F_{k-1}\big(z-c_k(b)\big)+g_{\tau,k}(b)\big\}"><span class="tex-fallback">F_k(z) = max_b { F_k−1(z − c_k(b)) + g_k(b) }</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="two">
+        <div class="prose">
+          <p><strong>Why divergence times influence.</strong> For one window, let <i>J<sub>w</sub></i> be the KL between its commitments at the upscaled and target widths, and <i>R<sub>w</sub></i> the range of the expected final score over those commitments. The effect of upscaling the window obeys <span class="tex" data-tex="|\Delta\mathcal M_w|^2\le\tfrac12\,\mathbb E[J_w]\,\mathbb E[R_w^2]">|ΔM_w|² ≤ ½ E[J_w] E[R_w²]</span>. Neither term is observable on one unlabeled trajectory, so T²Quant uses the divergence <i>K<sub>w</sub></i> and the influence <i>I<sub>w</sub></i> as surrogates and ranks windows by <span class="tex" data-tex="S_w=\mathbb E[K_w]\,\mathbb E[I_w]">S_w = E[K_w] E[I_w]</span>.</p>
+          <p><strong>Divergence alone is not enough.</strong> On HumanEval it ranks the final window highest, although tokens committed last cannot affect anything after them. The influence weight removes such windows.</p>
+          <p><strong>At inference</strong> the schedule is a 16-entry lookup indexed by the denoising step. There are no extra kernels and no per-token decisions.</p>
+        </div>
+        <div class="figure">
+          <div class="fig-title">Does the proxy pick the right windows?</div>
+          <table class="mini-table">
+            <thead><tr><th>Task</th><th class="num">Pearson r</th><th>Single-window upscale (A4 → A8)</th></tr></thead>
+            <tbody>
+              <tr><td>GSM8K</td><td class="num">0.98</td><td>Proxy's top window is the best one: +7.0 points, 90% of the full-precision gap</td></tr>
+              <tr><td>MMLU-Pro</td><td class="num">0.96</td><td>Proxy's top window is the best one: +4.4 points, the whole gap</td></tr>
+              <tr><td>HumanEval</td><td class="num">0.63</td><td>Gains sit in the first two windows, where the proxy puts its mass; split-half seed noise caps r near 0.77</td></tr>
+            </tbody>
+          </table>
+          <p class="caption">r: correlation across the 16 windows between the label-free proxy and the measured accuracy gain of upscaling that window alone (LLaDA-8B-Instruct). A proxy from 16 random unlabeled prompts matches the all-prompt proxy at r ≥ 0.96 on every task.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="allocator">
+    <div class="wrap stack">
+      <div class="sec-head">
+        <span class="sec-num">04 · Allocator</span>
+        <h2>Re-solve the schedule yourself</h2>
+        <p class="lede">These are the calibrated per-window gains that feed the dynamic program. Change the task or the average-bit budget and the page solves the allocation again, exactly, in your browser.</p>
+      </div>
+      <div class="figure">
+        <div class="fig-top">
+          <div class="ctrl-row">
+            <label class="field" for="ex-model">Model
+              <select id="ex-model">
+                <option value="llada8b_instruct">LLaDA-8B-Instruct</option>
+                <option value="llada15">LLaDA-1.5-8B</option>
+                <option value="dream">Dream-7B-Instruct</option>
+              </select>
+            </label>
+            <label class="field" for="ex-task">Task
+              <select id="ex-task">
+                <option value="gsm8k">GSM8K</option>
+                <option value="humaneval">HumanEval</option>
+                <option value="arcgen">ARC-Challenge</option>
+                <option value="mmlupro">MMLU-Pro</option>
+                <option value="drop">DROP</option>
+                <option value="bbh">BBH</option>
+              </select>
+            </label>
+            <label class="field" for="ex-budget">Budget
+              <input type="range" id="ex-budget" min="56" max="72" step="2" value="64">
+              <b class="mono" id="ex-budget-v" style="color:var(--ink)">4.00</b> bits
+            </label>
+          </div>
+        </div>
+        <div class="legend">
+          <span><span class="sw" style="background:var(--s-up)"></span>gain from 8 bits, g<sub>k</sub>(8)</span>
+          <span><span class="sw" style="background:var(--s-down)"></span>cost of 3 bits, g<sub>k</sub>(3)</span>
+        </div>
+        <div class="chart" id="chart-gain" style="height:240px"></div>
+        <div class="strip-row">
+          <div class="lbl"><b>Optimal schedule</b><span id="ex-summary">at 4.00 bits</span></div>
+          <div class="strip" id="ex-strip"></div>
+        </div>
+        <div class="strip-row">
+          <div class="lbl"><b>Uniform</b>baseline</div>
+          <div class="strip compact" id="ex-uniform"></div>
+        </div>
+        <div class="axis-note"><span>← early (fully masked)</span><span>denoising</span><span>late (fully unmasked) →</span></div>
+        <p class="caption" id="ex-note">Widths {3, 4, 6, 8}, 16 windows, cost = bits per window, so the budget fixes the sum of the 16 widths. Gains are from the calibration runs on the shared QuaRot + GPTQ W4A4 base (in these runs κ counts only score-relevant positions, an earlier variant of the paper's Eq. 3). At 4.00 bits the solver reproduces the stored schedule for all 18 model/task pairs.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="results">
+    <div class="wrap stack">
+      <div class="sec-head">
+        <span class="sec-num">05 · Results</span>
+        <h2>Every base method improves, on every model</h2>
+        <p class="lede">W4A4 accuracy on three diffusion LMs and six benchmarks. Each quantizer runs as published and with T²Quant on top; both use 4-bit weights and exactly 4.00 average activation bits, so a pair differs only in where along the trajectory the bits go.</p>
+      </div>
+      <div class="figure">
+        <div class="fig-top">
+          <div class="fig-title">Average accuracy, base method → with T²Quant</div>
+          <div class="legend">
+            <span><span class="dot" style="background:var(--s-base)"></span>base method</span>
+            <span><span class="dot" style="background:var(--s-ours)"></span>+ T²Quant</span>
+            <span><span class="line dash" style="border-color:var(--ink-3)"></span>FP16</span>
+          </div>
+        </div>
+        <div class="chart" id="chart-dumbbell" style="height:420px"></div>
+      </div>
+      <div class="figure">
+        <div class="fig-top">
+          <div class="fig-title">Table 1 · W4A4 accuracy (%)</div>
+          <div class="seg" role="group" aria-label="Model" id="table-model">
+            <button type="button" data-model="dream" aria-pressed="true">Dream-7B-Instruct</button>
+            <button type="button" data-model="llada15" aria-pressed="false">LLaDA-1.5-8B</button>
+            <button type="button" data-model="llada8b_instruct" aria-pressed="false">LLaDA-8B-Instruct</button>
+          </div>
+        </div>
+        <div class="table-wrap"><table class="results" id="results-table"></table></div>
+        <p class="caption">Bold: best quantized result; underline: second best. Small blue numbers: change in average over the same base method. Held-out problems are disjoint from every calibration prompt; all rows share the sampler and prompts, so comparisons are paired.</p>
+      </div>
+      <div class="two">
+        <div class="prose">
+          <p><strong>Best quantized accuracy on every model.</strong> The two highest quantized averages are T²Quant rows on every model. They beat the strongest standalone baseline by 3.55, 1.13 and 1.40 points on Dream, LLaDA-1.5 and LLaDA-8B-Instruct, and sit 2.0, 2.5 and 1.6 points below FP16.</p>
+          <p><strong>Largest gains where quantization hurts most.</strong> On Dream, GSM8K rises from 35.6 to 53.5 with DLLMQuant and from 46.1 to 58.8 with STaR-Quant. GSM8K gains reach 9.6 points on LLaDA-1.5 and 10.4 on LLaDA-8B-Instruct.</p>
+        </div>
+        <div class="takeaway"><span class="k">Placement, not budget</span>A random schedule with the same 4.00 average bits falls 14–19 points below the base methods on Dream. The same bits placed by T²Quant give the best quantized average on every model.</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="ablations">
+    <div class="wrap stack">
+      <div class="sec-head">
+        <span class="sec-num">06 · Ablations</span>
+        <h2>Cheap to calibrate, stable, and about placement</h2>
+        <p class="lede">LLaDA-8B-Instruct on GSM8K (512 held-out problems), shared W4A4 base, levels {3, 4, 8}. Uniform W4A4 scores 44.1, T²Quant 49.4 and FP16 52.9.</p>
+      </div>
+      <div class="figure">
+        <div class="legend">
+          <span><span class="dot" style="background:var(--s-ours)"></span>T²Quant</span>
+          <span><span class="dot" style="background:var(--s-base)"></span>uniform W4A4</span>
+          <span><span class="dot" style="background:var(--s-random)"></span>random schedule, same bits</span>
+          <span><span class="line dash" style="border-color:var(--ink-3)"></span>FP16</span>
+        </div>
+        <div class="steps" style="counter-reset:none">
+          <div class="abl"><div class="fig-title small">(a) Calibration prompts</div><div class="chart" id="chart-calsize" style="height:230px"></div></div>
+          <div class="abl"><div class="fig-title small">(b) Tokens per step</div><div class="chart" id="chart-tps" style="height:230px"></div></div>
+          <div class="abl"><div class="fig-title small">(c) Average activation bits</div><div class="chart" id="chart-budget" style="height:230px"></div></div>
+        </div>
+        <p class="caption">(a) Mean over three random subsets per size, with the range; 256 is the full pool. (b) The schedule calibrated at 4 tokens per step, reused unchanged. (c) The random control spends exactly T²Quant's bits, in shuffled windows. Accuracy in %.</p>
+      </div>
+      <div class="steps" style="counter-reset:none">
+        <div class="prose"><p><strong>16 prompts</strong> already recover about three quarters of the gain (48.0 against 49.4 with 256). Twelve random subsets of 16–128 prompts yield five distinct schedules, all the same shape: high precision early, low precision in the last four to eight windows.</p></div>
+        <div class="prose"><p><strong>The schedule transfers</strong> to 2 tokens per step with the same +5.3 points (60.5 against 55.3). At 8 tokens per step every row collapses (FP16 31.6) and the gain shrinks to a tie.</p></div>
+        <div class="prose"><p><strong>3.75 bits beat uniform 4 bits</strong> by 4.3 points, and bits beyond 4 buy nothing. The same bits in random windows stay at the level of uniform A3 (28.7): one early 3-bit window costs as much as making every window 3-bit.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="code">
+    <div class="wrap stack">
+      <div class="sec-head">
+        <span class="sec-num">07 · Use it</span>
+        <h2>Run T²Quant on one GPU</h2>
+        <p class="lede">The repository is a minimal, tested implementation for LLaDA-8B-Instruct: QuaRot-style rotation, GPTQ 4-bit weights, switchable per-token activation quantization, label-free calibration and the exact allocator.</p>
+      </div>
+      <div class="two">
+        <ol class="use-steps">
+          <li><div class="prose"><p><b>Install.</b> Python 3.10+ and one CUDA GPU with 40 GB or more. The model and datasets download from the Hugging Face Hub on first use.</p></div></li>
+          <li><div class="prose"><p><b>Run the notebook.</b> <code>T2Quant.ipynb</code> loads the full-precision reference and the quantized base, calibrates on 16 unlabeled GSM8K training questions, solves the allocation and evaluates FP, uniform W4A4 and T²Quant. It takes about 4–5 hours at the paper's setting.</p></div></li>
+          <li><div class="prose"><p><b>Scale out.</b> The command line shards calibration and evaluation across GPUs and reports accuracy with 95% bootstrap intervals and an exact sign test.</p></div></li>
+        </ol>
+        <div class="stack" style="gap:1rem">
+          <div class="code"><button type="button" class="ghost copy" data-copy="code-quick">Copy</button><pre id="code-quick">git clone https://github.com/OfekAvivi/T2Quant.git
+cd T2Quant
+pip install -r requirements.txt
+jupyter notebook T2Quant.ipynb   <span class="c"># or headless: python run.py</span>
+python -m pytest tests -q        <span class="c"># CPU tests, seconds</span></pre></div>
+          <div class="code"><button type="button" class="ghost copy" data-copy="code-cli">Copy</button><pre id="code-cli">P="--task gsm8k --out runs/gsm8k --gen_len 512 --steps 128 --windows 16 --cache_dir cache"
+for i in 0 1 2 3; do CUDA_VISIBLE_DEVICES=$i python -m t2quant.cli calibrate $P --shard $i/4 &amp; done; wait
+for c in fp uniform t2quant; do
+  for i in 0 1 2 3; do CUDA_VISIBLE_DEVICES=$i python -m t2quant.cli evaluate $P --config $c --shard $i/4 &amp; done; wait
+done
+python -m t2quant.cli report --out runs/gsm8k</pre></div>
+        </div>
+      </div>
+      <div class="figure">
+        <div class="fig-title">What the repository reproduces</div>
+        <div class="strip-row">
+          <div class="lbl"><b>GSM8K schedule</b>levels 3–8, 16 prompts</div>
+          <div class="strip" id="repo-strip"></div>
+        </div>
+        <table class="mini-table">
+          <thead><tr><th>LLaDA-8B-Instruct, GSM8K (first 500 test problems)</th><th class="num">Full precision</th><th class="num">Uniform W4A4</th><th class="num">T²Quant</th><th class="num">Fixed / broken</th></tr></thead>
+          <tbody><tr><td>Accuracy (%), 4.00 average activation bits</td><td class="num">51.2</td><td class="num">46.6</td><td class="num"><b>51.4</b></td><td class="num">84 / 60</td></tr></tbody>
+        </table>
+        <p class="caption">From the repository README. Fixed / broken: problems T²Quant solves and uniform W4A4 does not, and the reverse (exact two-sided sign test p = 0.055). The schedule moves precision to the first windows and pays for it at the end, recovering full-precision accuracy at the same average bits.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="cite">
+    <div class="wrap stack">
+      <div class="sec-head">
+        <span class="sec-num">Cite</span>
+        <h2>BibTeX</h2>
+      </div>
+      <div class="code"><button type="button" class="ghost copy" data-copy="bibtex">Copy</button><pre id="bibtex">@misc{avivi2026t2quant,
+  title  = {Different Tasks, Different Timesteps: Temporal Task-Aware Quantization for Diffusion Language Models},
+  author = {Avivi, Ofek and Rahimi, Eliron and Mendelson, Avi and Baskin, Chaim},
+  year   = {2026},
+  note   = {Preprint},
+  url    = {https://github.com/OfekAvivi/T2Quant}
+}</pre></div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>T²Quant · Technion and INSIGHT Lab, Ben-Gurion University of the Negev.</p>
+    <p>The interactive figures use calibration data from the research runs behind the paper. The replay's token order is a schematic; the schedules in it are real.</p>
+  </div>
+</footer>
+
+<div id="tip" hidden></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<script src="assets/profiles.js"></script>
+<script src="assets/app.js"></script>
+</body>
+</html>
