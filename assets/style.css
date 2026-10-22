@@ -24,7 +24,7 @@
   --s-ours: #1d4ed8; --s-random: #eb6834; --s-base: #8a92a1; --s-down: #e34948; --s-up: #2a78d6;
   --grid: #e9ecf1;
   --ours-row: #eef3fe;
-  --logo-tile: #ffffff; --logo-tile-line: #dde1e8;
+  --logo-tile: #ffffff; --logo-tile-line: rgb(17 24 39 / .12);
 
   --f-display: "Source Serif 4", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
   --f-body: "IBM Plex Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
@@ -123,24 +123,18 @@ sup { line-height: 0; }
 .affils { display: flex; flex-wrap: wrap; gap: .1rem 1.2rem; font-size: .88rem; color: var(--ink-3); }
 .affils sup { font-size: .75em; margin-right: 2px; }
 /* affiliation logos: one white tile each (the marks are full-colour, so the tile stays light in both themes) */
-.logos {
-  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; width: 100%; margin-top: 1.1rem;
-}
+.logos { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 1rem; }
 .logos a {
-  display: flex; align-items: center; justify-content: center; height: 84px; padding: 12px 20px;
+  display: inline-flex; align-items: center; justify-content: center; height: 66px; padding: 10px 18px;
   background: var(--logo-tile); border: 1px solid var(--logo-tile-line); border-radius: 12px;
-  box-shadow: 0 1px 2px rgb(17 24 39 / .05);
-  transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+  transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
 }
-.logos a:hover { transform: translateY(-3px); border-color: var(--ink-3); box-shadow: 0 10px 22px rgb(17 24 39 / .12); }
-.logos a:active { transform: translateY(0) scale(.98); box-shadow: 0 1px 2px rgb(17 24 39 / .08); transition-duration: .06s; }
+.logos a:hover { transform: translateY(-2px); box-shadow: 0 8px 18px rgb(17 24 39 / .1); }
+.logos a:active { transform: translateY(0) scale(.98); box-shadow: none; transition-duration: .06s; }
 .logos a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 @media (prefers-reduced-motion: reduce) { .logos a, .logos a:hover, .logos a:active { transform: none; transition: none; } }
-.logos img { display: block; width: auto; max-width: 100%; object-fit: contain; }
-/* heights balance the three marks' visual weight (the Technion mark is tall, the INSIGHT wordmark wide) */
-.logos .technion img { height: 56px; }
-.logos .bgu img { height: 42px; }
-.logos .insight img { height: 35px; }
+.logos img { display: block; width: auto; height: 40px; }
+.logos .insight img { height: 34px; }
 .buttons { display: flex; flex-wrap: wrap; gap: .6rem; margin-top: .5rem; }
 .btn {
   display: inline-flex; align-items: center; gap: .5rem; padding: .55rem 1rem; border-radius: 8px;
@@ -340,9 +334,7 @@ footer .wrap { display: grid; gap: .6rem; }
   .strip { gap: 2px; }
   .strip > div { font-size: .62rem; height: 28px; }
   .strip-row { grid-template-columns: minmax(0, 1fr); }
-  .logos { grid-template-columns: minmax(0, 1fr); gap: .7rem; }
-  .logos a { height: 68px; }
-  .logos .technion img { height: 46px; }
-  .logos .bgu img { height: 34px; }
-  .logos .insight img { height: 28px; }
+  .logos a { height: 56px; padding: 8px 12px; }
+  .logos img { height: 32px; }
+  .logos .insight img { height: 26px; }
 }
