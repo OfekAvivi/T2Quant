@@ -127,7 +127,7 @@ sup { line-height: 0; }
   display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; width: 100%; margin-top: 1.1rem;
 }
 .logos a {
-  display: flex; align-items: center; justify-content: center; height: 104px; padding: 14px 22px;
+  display: flex; align-items: center; justify-content: center; height: 84px; padding: 12px 20px;
   background: var(--logo-tile); border: 1px solid var(--logo-tile-line); border-radius: 12px;
   box-shadow: 0 1px 2px rgb(17 24 39 / .05);
   transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
@@ -138,9 +138,9 @@ sup { line-height: 0; }
 @media (prefers-reduced-motion: reduce) { .logos a, .logos a:hover, .logos a:active { transform: none; transition: none; } }
 .logos img { display: block; width: auto; max-width: 100%; object-fit: contain; }
 /* heights balance the three marks' visual weight (the Technion mark is tall, the INSIGHT wordmark wide) */
-.logos .technion img { height: 70px; }
-.logos .bgu img { height: 52px; }
-.logos .insight img { height: 44px; }
+.logos .technion img { height: 56px; }
+.logos .bgu img { height: 42px; }
+.logos .insight img { height: 35px; }
 .buttons { display: flex; flex-wrap: wrap; gap: .6rem; margin-top: .5rem; }
 .btn {
   display: inline-flex; align-items: center; gap: .5rem; padding: .55rem 1rem; border-radius: 8px;
@@ -341,8 +341,8 @@ footer .wrap { display: grid; gap: .6rem; }
   .strip > div { font-size: .62rem; height: 28px; }
   .strip-row { grid-template-columns: minmax(0, 1fr); }
   .logos { grid-template-columns: minmax(0, 1fr); gap: .7rem; }
-  .logos a { height: 80px; }
-  .logos .technion img { height: 54px; }
-  .logos .bgu img { height: 40px; }
-  .logos .insight img { height: 34px; }
+  .logos a { height: 68px; }
+  .logos .technion img { height: 46px; }
+  .logos .bgu img { height: 34px; }
+  .logos .insight img { height: 28px; }
 }
