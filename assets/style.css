@@ -24,7 +24,7 @@
   --s-ours: #1d4ed8; --s-random: #eb6834; --s-base: #8a92a1; --s-down: #e34948; --s-up: #2a78d6;
   --grid: #e9ecf1;
   --ours-row: #eef3fe;
-  --logo-plate: transparent; --logo-pad: 0;
+  --logo-tile: #ffffff; --logo-tile-line: #dde1e8;
 
   --f-display: "Source Serif 4", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
   --f-body: "IBM Plex Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
@@ -42,7 +42,7 @@
     --on-lo: #eceef3; --on-hi: #0e1015; --mask: #161a22; --mask-line: #2b313d;
     --s-gsm8k: #3987e5; --s-humaneval: #d95926; --s-mmlupro: #199e70;
     --s-ours: #7ea2ff; --s-random: #d95926; --s-base: #8b93a3; --s-down: #e66767; --s-up: #3987e5;
-    --grid: #232835; --ours-row: #18213a; --logo-plate: #f3f4f7; --logo-pad: .7rem 1rem;
+    --grid: #232835; --ours-row: #18213a; --logo-tile: #f4f5f8; --logo-tile-line: transparent;
     color-scheme: dark;
   }
 }
@@ -53,7 +53,7 @@
   --on-lo: #eceef3; --on-hi: #0e1015; --mask: #161a22; --mask-line: #2b313d;
   --s-gsm8k: #3987e5; --s-humaneval: #d95926; --s-mmlupro: #199e70;
   --s-ours: #7ea2ff; --s-random: #d95926; --s-base: #8b93a3; --s-down: #e66767; --s-up: #3987e5;
-  --grid: #232835; --ours-row: #18213a; --logo-plate: #f3f4f7; --logo-pad: .7rem 1rem;
+  --grid: #232835; --ours-row: #18213a; --logo-tile: #f4f5f8; --logo-tile-line: transparent;
   color-scheme: dark;
 }
 
@@ -122,17 +122,25 @@ sup { line-height: 0; }
 .author-list sup { font-size: .68em; color: var(--ink-3); margin-left: 1px; }
 .affils { display: flex; flex-wrap: wrap; gap: .1rem 1.2rem; font-size: .88rem; color: var(--ink-3); }
 .affils sup { font-size: .75em; margin-right: 2px; }
+/* affiliation logos: one white tile each (the marks are full-colour, so the tile stays light in both themes) */
 .logos {
-  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1.5rem 3rem;
-  width: 100%; margin-top: 1.1rem; background: var(--logo-plate); border-radius: var(--radius); padding: var(--logo-pad);
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; width: 100%; margin-top: 1.1rem;
 }
-.logos a { display: block; border-radius: 6px; transition: opacity .15s; }
-.logos a:hover { opacity: .72; }
+.logos a {
+  display: flex; align-items: center; justify-content: center; height: 104px; padding: 14px 22px;
+  background: var(--logo-tile); border: 1px solid var(--logo-tile-line); border-radius: 12px;
+  box-shadow: 0 1px 2px rgb(17 24 39 / .05);
+  transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+}
+.logos a:hover { transform: translateY(-3px); border-color: var(--ink-3); box-shadow: 0 10px 22px rgb(17 24 39 / .12); }
+.logos a:active { transform: translateY(0) scale(.98); box-shadow: 0 1px 2px rgb(17 24 39 / .08); transition-duration: .06s; }
+.logos a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+@media (prefers-reduced-motion: reduce) { .logos a, .logos a:hover, .logos a:active { transform: none; transition: none; } }
 .logos img { display: block; width: auto; max-width: 100%; object-fit: contain; }
 /* heights balance the three marks' visual weight (the Technion mark is tall, the INSIGHT wordmark wide) */
-.logos .technion img { height: 72px; }
-.logos .bgu img { height: 56px; }
-.logos .insight img { height: 50px; }
+.logos .technion img { height: 70px; }
+.logos .bgu img { height: 52px; }
+.logos .insight img { height: 44px; }
 .buttons { display: flex; flex-wrap: wrap; gap: .6rem; margin-top: .5rem; }
 .btn {
   display: inline-flex; align-items: center; gap: .5rem; padding: .55rem 1rem; border-radius: 8px;
@@ -332,8 +340,9 @@ footer .wrap { display: grid; gap: .6rem; }
   .strip { gap: 2px; }
   .strip > div { font-size: .62rem; height: 28px; }
   .strip-row { grid-template-columns: minmax(0, 1fr); }
-  .logos { justify-content: flex-start; gap: 1.2rem 2rem; }
-  .logos .technion img { height: 46px; }
-  .logos .bgu img { height: 36px; }
-  .logos .insight img { height: 32px; }
+  .logos { grid-template-columns: minmax(0, 1fr); gap: .7rem; }
+  .logos a { height: 80px; }
+  .logos .technion img { height: 54px; }
+  .logos .bgu img { height: 40px; }
+  .logos .insight img { height: 34px; }
 }
