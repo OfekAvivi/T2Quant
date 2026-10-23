@@ -78,6 +78,7 @@ h1, h2, h3 { font-family: var(--f-display); color: var(--ink); text-wrap: balanc
 p { margin: 0; }
 code, .mono { font-family: var(--f-mono); font-size: .88em; }
 sup { line-height: 0; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 
 .wrap {
   max-width: var(--frame); margin: 0 auto;

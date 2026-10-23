@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://t2quant.ofekavivi.com/sitemap.xml

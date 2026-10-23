@@ -3,16 +3,185 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>T²Quant</title>
+<title>T²Quant: Temporal Task-Aware Quantization for Diffusion Language Models</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<meta name="description" content="T²Quant allocates activation precision across the denoising steps of diffusion language models, per task, from a label-free signal, at a fixed average bit budget.">
-<meta property="og:title" content="T²Quant: Different Tasks, Different Timesteps">
-<meta property="og:description" content="Temporal task-aware quantization for diffusion language models.">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='6' width='6' height='20' rx='1.5' fill='%23212836'/%3E%3Crect x='10' y='6' width='6' height='20' rx='1.5' fill='%236f7a8e'/%3E%3Crect x='18' y='6' width='6' height='20' rx='1.5' fill='%23c3c9d4'/%3E%3Crect x='26' y='6' width='4' height='20' rx='1.5' fill='%23e6e9ef'/%3E%3C/svg%3E">
+<meta name="description" content="T²Quant (T2Quant): label-free, task- and time-aware activation precision for diffusion language models (LLaDA, Dream). Up to +6.7 points at W4A4.">
+<meta name="author" content="Ofek Avivi, Eliron Rahimi, Avi Mendelson, Chaim Baskin">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<link rel="canonical" href="https://t2quant.ofekavivi.com/">
+<meta name="theme-color" content="#fbfbfc">
+
+<!-- Social previews (X, LinkedIn, Slack, WhatsApp, Facebook) -->
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="T²Quant">
+<meta property="og:url" content="https://t2quant.ofekavivi.com/">
+<meta property="og:title" content="Different Tasks, Different Timesteps: Temporal Task-Aware Quantization for Diffusion Language Models">
+<meta property="og:description" content="Quantization sensitivity in diffusion LMs depends on the task and the denoising step. T²Quant measures it from a few unlabeled prompts and re-allocates activation bits across denoising steps, improving every base method at the same W4A4 budget.">
+<meta property="og:image" content="https://t2quant.ofekavivi.com/assets/social-card.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="T²Quant: per-task activation-precision schedules over 16 denoising windows for GSM8K, HumanEval and MMLU-Pro">
+<meta property="article:published_time" content="2026-10-22">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Different Tasks, Different Timesteps: Temporal Task-Aware Quantization for Diffusion Language Models">
+<meta name="twitter:description" content="Quantization sensitivity in diffusion LMs depends on the task and the denoising step. T²Quant measures it from a few unlabeled prompts and re-allocates activation bits across denoising steps, improving every base method at the same W4A4 budget.">
+<meta name="twitter:image" content="https://t2quant.ofekavivi.com/assets/social-card.png">
+<meta name="twitter:image:alt" content="T²Quant: per-task activation-precision schedules over 16 denoising windows for GSM8K, HumanEval and MMLU-Pro">
+
+<!-- Google Scholar (Highwire Press tags) -->
+<meta name="citation_title" content="Different Tasks, Different Timesteps: Temporal Task-Aware Quantization for Diffusion Language Models">
+<meta name="citation_author" content="Avivi, Ofek">
+<meta name="citation_author" content="Rahimi, Eliron">
+<meta name="citation_author" content="Mendelson, Avi">
+<meta name="citation_author" content="Baskin, Chaim">
+<meta name="citation_publication_date" content="2026/10/22">
+<meta name="citation_online_date" content="2026/10/22">
+<meta name="citation_arxiv_id" content="2610.31198">
+<meta name="citation_abstract_html_url" content="https://arxiv.org/abs/2610.31198">
+<meta name="citation_pdf_url" content="https://arxiv.org/pdf/2610.31198">
+
+<link rel="icon" href="favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="48x48" href="favicon-48.png">
+<link rel="icon" type="image/png" sizes="192x192" href="favicon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="site.webmanifest">
+<script type="application/ld+json">
+{
+ "@context": "https://schema.org",
+ "@graph": [
+  {
+   "@type": "WebPage",
+   "@id": "https://t2quant.ofekavivi.com/",
+   "url": "https://t2quant.ofekavivi.com/",
+   "name": "T²Quant: Temporal Task-Aware Quantization for Diffusion Language Models",
+   "description": "T²Quant (T2Quant): label-free, task- and time-aware activation precision for diffusion language models (LLaDA, Dream). Up to +6.7 points at W4A4.",
+   "inLanguage": "en",
+   "primaryImageOfPage": {
+    "@type": "ImageObject",
+    "url": "https://t2quant.ofekavivi.com/assets/social-card.png",
+    "width": 1200,
+    "height": 630
+   },
+   "about": {
+    "@id": "https://t2quant.ofekavivi.com/#paper"
+   }
+  },
+  {
+   "@type": "ScholarlyArticle",
+   "@id": "https://t2quant.ofekavivi.com/#paper",
+   "headline": "Different Tasks, Different Timesteps: Temporal Task-Aware Quantization for Diffusion Language Models",
+   "name": "Different Tasks, Different Timesteps: Temporal Task-Aware Quantization for Diffusion Language Models",
+   "alternativeHeadline": "T²Quant (T2Quant)",
+   "abstract": "Diffusion Language Models (DLMs) introduce unique quantization challenges due to their iterative denoising process. In this work, we reveal that quantization sensitivity is both task- and time-dependent, with different downstream tasks exhibiting distinct precision requirements across denoising steps. We further show that these patterns can be predicted without ground-truth labels or task-specific evaluation metrics. Building on these findings, we introduce T²Quant, a task and time-aware mixed-precision quantization framework that uses a label-free sensitivity signal to optimally allocate activation precision across denoising steps under a fixed bit-width budget. Extensive experiments across three DLMs and six benchmarks demonstrate that T²Quant consistently improves the average accuracy of existing quantization methods, achieving gains of up to 6.7 percentage points under the same budget.",
+   "datePublished": "2026-10-22",
+   "inLanguage": "en",
+   "url": "https://arxiv.org/abs/2610.31198",
+   "mainEntityOfPage": "https://t2quant.ofekavivi.com/",
+   "image": "https://t2quant.ofekavivi.com/assets/social-card.png",
+   "identifier": {
+    "@type": "PropertyValue",
+    "propertyID": "arXiv",
+    "value": "2610.31198"
+   },
+   "sameAs": [
+    "https://arxiv.org/abs/2610.31198"
+   ],
+   "author": [
+    {
+     "@type": "Person",
+     "name": "Ofek Avivi",
+     "url": "https://github.com/OfekAvivi",
+     "affiliation": [
+      {
+       "@type": "CollegeOrUniversity",
+       "name": "Technion – Israel Institute of Technology",
+       "url": "https://www.technion.ac.il/en/"
+      },
+      {
+       "@type": "ResearchOrganization",
+       "name": "INSIGHT Lab, Ben-Gurion University of the Negev",
+       "url": "https://insight.bgu.ac.il/"
+      }
+     ]
+    },
+    {
+     "@type": "Person",
+     "name": "Eliron Rahimi",
+     "url": "https://scholar.google.com/citations?user=7OSo8DkAAAAJ",
+     "affiliation": [
+      {
+       "@type": "CollegeOrUniversity",
+       "name": "Technion – Israel Institute of Technology",
+       "url": "https://www.technion.ac.il/en/"
+      },
+      {
+       "@type": "ResearchOrganization",
+       "name": "INSIGHT Lab, Ben-Gurion University of the Negev",
+       "url": "https://insight.bgu.ac.il/"
+      }
+     ]
+    },
+    {
+     "@type": "Person",
+     "name": "Avi Mendelson",
+     "url": "https://www.cs.technion.ac.il/~mendlson/",
+     "affiliation": [
+      {
+       "@type": "CollegeOrUniversity",
+       "name": "Technion – Israel Institute of Technology",
+       "url": "https://www.technion.ac.il/en/"
+      }
+     ]
+    },
+    {
+     "@type": "Person",
+     "name": "Chaim Baskin",
+     "url": "https://chaimbaskin.bgu.ac.il/",
+     "affiliation": [
+      {
+       "@type": "ResearchOrganization",
+       "name": "INSIGHT Lab, Ben-Gurion University of the Negev",
+       "url": "https://insight.bgu.ac.il/"
+      }
+     ]
+    }
+   ],
+   "keywords": [
+    "diffusion language models",
+    "quantization",
+    "mixed-precision quantization",
+    "post-training quantization",
+    "activation quantization",
+    "W4A4",
+    "LLaDA",
+    "Dream",
+    "efficient inference",
+    "T2Quant"
+   ],
+   "encoding": {
+    "@type": "MediaObject",
+    "encodingFormat": "application/pdf",
+    "contentUrl": "https://arxiv.org/pdf/2610.31198"
+   }
+  },
+  {
+   "@type": "SoftwareSourceCode",
+   "@id": "https://t2quant.ofekavivi.com/#code",
+   "name": "T2Quant",
+   "codeRepository": "https://github.com/OfekAvivi/T2Quant",
+   "programmingLanguage": "Python",
+   "description": "Minimal, tested implementation of T²Quant for LLaDA-8B-Instruct: rotation, GPTQ 4-bit weights, per-token activation quantization, label-free calibration and the exact allocator.",
+   "isPartOf": {
+    "@id": "https://t2quant.ofekavivi.com/#paper"
+   }
+  }
+ ]
+}
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap">
-<link rel="stylesheet" href="assets/style.css?v=202610231008">
+<link rel="stylesheet" href="assets/style.css?v=202610231300">
 <script>
   /* ---- Site settings: the only lines you need to edit ----
      arxiv: the arXiv id once the paper is up (e.g. "2610.01234"). It turns on the arXiv and PDF buttons and adds
@@ -47,7 +216,7 @@
   <div class="wrap stack">
     <div class="hero-head">
       <div class="eyebrow"><span class="tag">T²Quant</span><span>Task- and time-aware quantization</span><span class="venue" id="venue">Preprint</span></div>
-      <h1>Different Tasks, Different Timesteps<span class="sub">Temporal Task-Aware Quantization for Diffusion Language Models</span></h1>
+      <h1>Different Tasks, Different Timesteps<span class="sr-only">: </span><span class="sub">Temporal Task-Aware Quantization for Diffusion Language Models</span></h1>
 
       <div class="authors">
         <div class="author-list">
@@ -62,9 +231,9 @@
           <span><sup>*</sup>Equal contribution</span>
         </div>
         <div class="logos" aria-label="Affiliations">
-          <a class="technion" href="https://www.technion.ac.il/en/"><img src="assets/logos/technion-wide.svg" alt="Technion – Israel Institute of Technology"></a>
-          <a class="bgu" href="https://www.bgu.ac.il/en/"><img src="assets/logos/bgu-wide.svg" alt="Ben-Gurion University of the Negev"></a>
-          <a class="insight" href="https://insight.bgu.ac.il/"><img src="assets/logos/insight-wide.png" alt="INSIGHT Lab"></a>
+          <a class="technion" href="https://www.technion.ac.il/en/"><img src="assets/logos/technion-wide.svg" width="449" height="202" alt="Technion – Israel Institute of Technology"></a>
+          <a class="bgu" href="https://www.bgu.ac.il/en/"><img src="assets/logos/bgu-wide.svg" width="200" height="50" alt="Ben-Gurion University of the Negev"></a>
+          <a class="insight" href="https://insight.bgu.ac.il/"><img src="assets/logos/insight-wide.png" width="1400" height="253" alt="INSIGHT Lab"></a>
         </div>
       </div>
 
@@ -418,7 +587,7 @@ python -m t2quant.cli report --out runs/gsm8k</pre></div>
 
 <footer>
   <div class="wrap">
-    <p>T²Quant · Technion and INSIGHT Lab, Ben-Gurion University of the Negev.</p>
+    <p>T²Quant (T2Quant) · Technion and INSIGHT Lab, Ben-Gurion University of the Negev · Paper: <a href="https://arxiv.org/abs/2610.31198">arXiv:2610.31198</a> · Code: <a href="https://github.com/OfekAvivi/T2Quant">github.com/OfekAvivi/T2Quant</a></p>
     <p>The interactive figures use calibration data from the research runs behind the paper. The replay's token order is a schematic; the schedules in it are real.</p>
   </div>
 </footer>
@@ -426,7 +595,7 @@ python -m t2quant.cli report --out runs/gsm8k</pre></div>
 <div id="tip" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
-<script src="assets/profiles.js?v=202610231008"></script>
-<script src="assets/app.js?v=202610231008"></script>
+<script src="assets/profiles.js?v=202610231300"></script>
+<script src="assets/app.js?v=202610231300"></script>
 </body>
 </html>
