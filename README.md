@@ -1,5 +1,13 @@
 # T²Quant
 
+[![arXiv](https://img.shields.io/badge/arXiv-2610.31198-b31b1b.svg)](https://arxiv.org/abs/2610.31198)
+[![Project page](https://img.shields.io/badge/Project-t2quant.ofekavivi.com-1d4ed8.svg)](https://t2quant.ofekavivi.com)
+[![Hugging Face paper](https://img.shields.io/badge/%F0%9F%A4%97%20Paper-2610.31198-ffd21e.svg)](https://huggingface.co/papers/2610.31198)
+
+Official code for **[Different Tasks, Different Timesteps: Temporal Task-Aware Quantization for Diffusion Language Models](https://arxiv.org/abs/2610.31198)**
+
+Ofek Avivi\*, Eliron Rahimi\*, Avi Mendelson, Chaim Baskin (\* equal contribution) · Technion and INSIGHT Lab, Ben-Gurion University of the Negev
+
 Label-free, task-specific allocation of activation precision over the denoising trajectory of a masked-diffusion language model
 (LLaDA-8B-Instruct), at a fixed average bit budget.
 
@@ -75,3 +83,16 @@ W4A4) and `scripts/check_rotation.py` (the rotation leaves the full-precision mo
   evaluates further models and tasks. GSM8K is evaluated on the first 500 test problems (the paper uses a random split of the test set).
 * The sampler re-implements LLaDA's low-confidence remasking (greedy, one block; end-of-sequence committed last for GSM8K and never
   predicted for HumanEval, as in LLaDA's evaluation settings).
+
+## Citation
+```bibtex
+@misc{avivi2026t2quant,
+  title         = {Different Tasks, Different Timesteps: Temporal Task-Aware Quantization for Diffusion Language Models},
+  author        = {Avivi, Ofek and Rahimi, Eliron and Mendelson, Avi and Baskin, Chaim},
+  year          = {2026},
+  eprint        = {2610.31198},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.AI},
+  url           = {https://arxiv.org/abs/2610.31198}
+}
+```
