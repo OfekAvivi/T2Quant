@@ -96,3 +96,6 @@ W4A4) and `scripts/check_rotation.py` (the rotation leaves the full-precision mo
   url           = {https://arxiv.org/abs/2610.31198}
 }
 ```
+
+## License
+MIT. See [LICENSE](LICENSE).
