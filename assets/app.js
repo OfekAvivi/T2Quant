@@ -468,7 +468,7 @@
       pdf.removeAttribute("id"); pdf.href = `https://arxiv.org/pdf/${id}`;
       pdf.querySelector("span").textContent = "PDF"; pdf.querySelector(".soon").remove();
       a.after(pdf);
-      bib.push(`  eprint        = {${id}},`, "  archivePrefix = {arXiv},", `  url           = {https://arxiv.org/abs/${id}}`);
+      bib.push(`  eprint        = {${id}},`, "  archivePrefix = {arXiv},", `  primaryClass  = {${SITE.arxivClass || "cs.AI"}},`, `  url           = {https://arxiv.org/abs/${id}}`);
     } else {
       bib.push(`  note          = {${SITE.venue || "Preprint"}},`, `  url           = {${SITE.code || "https://github.com/OfekAvivi/T2Quant"}}`);
     }
